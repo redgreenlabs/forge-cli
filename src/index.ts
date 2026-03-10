@@ -95,6 +95,44 @@ export {
   type TaskNode,
 } from "./prd/task-graph.js";
 
+// Config Loader
+export {
+  loadConfig,
+  resolveForgeDir,
+  FORGE_DIR,
+  CONFIG_FILE,
+  type LoadedConfig,
+} from "./config/loader.js";
+
+// Commands
+export {
+  initProject,
+  detectProjectType,
+  ProjectType,
+  type InitOptions,
+  type InitResult,
+} from "./commands/init.js";
+
+export {
+  importPrd,
+  type ImportResult,
+} from "./commands/import.js";
+
+// Claude Executor
+export {
+  ClaudeCodeExecutor,
+  buildClaudeArgs,
+  parseClaudeResponse,
+  type ClaudeExecOptions,
+  type RawClaudeOutput,
+} from "./loop/executor.js";
+
+// Session Manager
+export {
+  SessionManager,
+  type SessionState,
+} from "./loop/session.js";
+
 // TUI Renderer
 export {
   renderDashboard,
