@@ -1,5 +1,5 @@
 import { Command } from "commander";
-import { readFileSync } from "fs";
+import { readFileSync, existsSync } from "fs";
 import { resolve } from "path";
 import chalk from "chalk";
 import { initProject } from "./commands/init.js";
@@ -154,14 +154,84 @@ program
       chalk.gray("  Press Ctrl+C to stop gracefully.\n")
     );
 
-    // TODO: Wire up full LoopOrchestrator with ClaudeCodeExecutor
+    // Load tasks
+    const { prepareRunContext } = await import("./commands/run.js");
+    const runCtx = prepareRunContext(cwd);
+
+    if (runCtx.tasks.length === 0) {
+      console.log(
+        chalk.yellow("No tasks found. Run `forge import <prd>` first.")
+      );
+      return;
+    }
+
     console.log(
-      chalk.yellow(
-        "Full loop execution coming soon. Use --dry-run to preview the dashboard."
-      )
+      chalk.gray(`  Loaded ${runCtx.tasks.length} tasks from PRD.`)
     );
 
-    session.save();
+    // Create executor
+    const { ClaudeCodeExecutor } = await import("./loop/executor.js");
+    const executor = new ClaudeCodeExecutor();
+
+    // Create runner
+    const { LoopRunner } = await import("./loop/runner.js");
+    const runner = new LoopRunner({
+      config: effectiveConfig,
+      executor,
+      tasks: runCtx.tasks,
+      onDashboardUpdate: (dashState) => {
+        if (options.tui !== false) {
+          // Clear and re-render terminal dashboard
+          process.stdout.write("\x1B[2J\x1B[H");
+          console.log(renderDashboard({
+            state: dashState.loop,
+            tddPhase: dashState.tddPhase,
+            tddCycles: dashState.tddCycles,
+            agentLog: dashState.agentLog,
+            qualityGates: dashState.qualityReport,
+          }));
+        }
+      },
+    });
+
+    // Handle graceful shutdown
+    const controller = new AbortController();
+    const onSignal = () => {
+      console.log(chalk.yellow("\n\nGraceful shutdown..."));
+      controller.abort();
+    };
+    process.on("SIGINT", onSignal);
+    process.on("SIGTERM", onSignal);
+
+    try {
+      const result = await runner.run(controller.signal);
+
+      // Update session
+      session.recordIteration(result.iterations);
+      if (result.stopReason === "all_tasks_complete") {
+        session.complete(result.stopReason);
+      }
+      session.save();
+
+      // Print summary
+      console.log(chalk.bold.cyan("\n\nForge Run Complete"));
+      console.log(chalk.gray("─".repeat(40)));
+      console.log(`  Iterations: ${result.iterations}`);
+      console.log(
+        `  Tasks:      ${result.tasksCompleted}/${result.totalTasks} completed`
+      );
+      console.log(`  Duration:   ${(result.durationMs / 1000).toFixed(1)}s`);
+      console.log(`  Stop:       ${result.stopReason}`);
+      if (result.errors.length > 0) {
+        console.log(chalk.red(`  Errors:     ${result.errors.length}`));
+        for (const err of result.errors) {
+          console.log(chalk.red(`    - ${err}`));
+        }
+      }
+    } finally {
+      process.removeListener("SIGINT", onSignal);
+      process.removeListener("SIGTERM", onSignal);
+    }
   });
 
 program
@@ -234,14 +304,68 @@ program
     "terminal"
   )
   .action(async (_options) => {
-    console.log(
-      chalk.bold.cyan("Forge Health Report")
-    );
-    console.log(chalk.gray("─".repeat(40)));
-    // TODO: Implement full report with coverage, security, commit analysis
-    console.log(
-      chalk.yellow("Full health report coming in next release.")
-    );
+    const { generateReport } = await import("./docs/report.js");
+
+    const data = {
+      projectName: process.cwd().split("/").pop() ?? "project",
+      generatedAt: new Date().toISOString(),
+      sessions: { total: 0, totalIterations: 0, averageIterationsPerSession: 0 },
+      tests: {
+        total: 0,
+        passed: 0,
+        failed: 0,
+        coverage: { lines: 0, branches: 0, functions: 0 },
+      },
+      security: {
+        findings: { critical: 0, high: 0, medium: 0, low: 0 },
+        lastScanAt: "",
+        secretsDetected: 0,
+      },
+      commits: { total: 0, byType: {} as Record<string, number>, conventionalRate: 0 },
+      qualityGates: { totalRuns: 0, passRate: 0, mostFailedGate: "" },
+      tdd: { cyclesCompleted: 0, violations: 0 },
+    };
+
+    // Try to load session history
+    const historyPath = resolve(process.cwd(), ".forge", "session-history.json");
+    if (existsSync(historyPath)) {
+      try {
+        const history = JSON.parse(readFileSync(historyPath, "utf-8"));
+        data.sessions.total = history.length;
+        data.sessions.totalIterations = history.reduce(
+          (sum: number, s: { iterations: number }) => sum + s.iterations,
+          0
+        );
+        data.sessions.averageIterationsPerSession =
+          data.sessions.total > 0
+            ? data.sessions.totalIterations / data.sessions.total
+            : 0;
+      } catch {}
+    }
+
+    // Try to parse git log for commit stats
+    try {
+      const { execSync } = await import("child_process");
+      const log = execSync("git log --oneline -100", {
+        cwd: process.cwd(),
+        encoding: "utf-8",
+        stdio: ["pipe", "pipe", "pipe"],
+      });
+      const { parseCommitLog } = await import("./docs/changelog.js");
+      const entries = parseCommitLog(log);
+      data.commits.total = entries.length;
+      for (const e of entries) {
+        data.commits.byType[e.type] = (data.commits.byType[e.type] ?? 0) + 1;
+      }
+      const allCommits = log.split("\n").filter((l) => l.trim()).length;
+      data.commits.conventionalRate =
+        allCommits > 0
+          ? Math.round((entries.length / allCommits) * 1000) / 10
+          : 0;
+    } catch {}
+
+    const format = (_options.format ?? "terminal") as "terminal" | "json" | "html";
+    console.log(generateReport(data, format));
   });
 
 program

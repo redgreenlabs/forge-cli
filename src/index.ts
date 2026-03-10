@@ -133,6 +133,33 @@ export {
   type SessionState,
 } from "./loop/session.js";
 
+// Rate Limiter
+export {
+  RateLimiter,
+  type RateLimiterSnapshot,
+} from "./loop/rate-limiter.js";
+
+// Gate Plugin System
+export {
+  GatePluginRegistry,
+  createBuiltinGates,
+  type GatePlugin,
+  type BuiltinGateOptions,
+} from "./gates/plugin.js";
+
+// Health Report
+export {
+  generateReport,
+  type ReportData,
+  type ReportFormat,
+} from "./docs/report.js";
+
+// Run Context
+export {
+  prepareRunContext,
+  type RunContext,
+} from "./commands/run.js";
+
 // Loop Runner
 export {
   LoopRunner,
