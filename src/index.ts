@@ -77,3 +77,36 @@ export {
   SecretPattern,
   type SecretFinding,
 } from "./security/scanner.js";
+
+// TDD Enforcement
+export {
+  TddEnforcer,
+  TddPhase,
+  type TddViolation,
+  type TddCycleResult,
+  type TestRunResult,
+  type TddSnapshot,
+} from "./tdd/enforcer.js";
+
+// Task Dependency Graph
+export {
+  TaskGraph,
+  CyclicDependencyError,
+  type TaskNode,
+} from "./prd/task-graph.js";
+
+// TUI Renderer
+export {
+  renderDashboard,
+  renderHeader,
+  renderProgressBar,
+  renderTddPhase,
+  renderQualityGates,
+  renderCoverage,
+  renderSecurity,
+  renderAgentLog,
+  type DashboardConfig,
+  type CoverageMetrics,
+  type SecurityMetrics,
+  type AgentLogEntry,
+} from "./tui/renderer.js";
