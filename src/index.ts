@@ -133,6 +133,31 @@ export {
   type SessionState,
 } from "./loop/session.js";
 
+// Loop Runner
+export {
+  LoopRunner,
+  type LoopRunnerOptions,
+  type RunResult,
+} from "./loop/runner.js";
+
+// Changelog
+export {
+  generateChangelog,
+  parseCommitLog,
+  suggestVersion,
+  type CommitEntry,
+} from "./docs/changelog.js";
+
+// ADR Management
+export {
+  createAdr,
+  listAdrs,
+  AdrStatus,
+  type AdrInput,
+  type AdrCreateResult,
+  type AdrEntry,
+} from "./docs/adr.js";
+
 // TUI Renderer
 export {
   renderDashboard,
