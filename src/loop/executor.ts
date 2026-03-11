@@ -7,6 +7,10 @@ export interface ClaudeExecOptions {
   allowedTools: string[];
   timeout: number;
   sessionId?: string;
+  /** Permission mode for Claude CLI (default: "bypassPermissions") */
+  permissionMode?: string;
+  /** Maximum budget in USD per call */
+  maxBudgetUsd?: number;
 }
 
 /** Raw output from Claude CLI process */
@@ -29,11 +33,16 @@ export interface RawClaudeOutput {
 export function buildClaudeArgs(options: ClaudeExecOptions): string[] {
   const args: string[] = [];
 
-  // Prompt
+  // Prompt (non-interactive mode)
   args.push("-p", options.prompt);
 
   // Output format
   args.push("--output-format", "json");
+
+  // Permission mode — default to bypassPermissions so Claude doesn't hang
+  // waiting for interactive permission prompts
+  const permMode = options.permissionMode ?? "bypassPermissions";
+  args.push("--permission-mode", permMode);
 
   // System prompt
   if (options.systemPrompt) {
@@ -48,6 +57,11 @@ export function buildClaudeArgs(options: ClaudeExecOptions): string[] {
   // Session continuity
   if (options.sessionId) {
     args.push("--continue", options.sessionId);
+  }
+
+  // Budget cap
+  if (options.maxBudgetUsd !== undefined) {
+    args.push("--max-budget-usd", String(options.maxBudgetUsd));
   }
 
   return args;
@@ -265,13 +279,21 @@ function extractStatusBlock(
  */
 export class ClaudeCodeExecutor {
   private claudeCmd: string;
+  private verbose: boolean;
 
-  constructor(claudeCmd: string = "claude") {
+  constructor(claudeCmd: string = "claude", verbose: boolean = false) {
     this.claudeCmd = claudeCmd;
+    this.verbose = verbose;
   }
 
   async execute(options: ClaudeExecOptions): Promise<ClaudeResponse> {
     const args = buildClaudeArgs(options);
+
+    if (this.verbose) {
+      const promptPreview = options.prompt.slice(0, 80).replace(/\n/g, " ");
+      process.stderr.write(`[forge] Executing: ${this.claudeCmd} ${args.slice(0, 4).join(" ")} ...\n`);
+      process.stderr.write(`[forge] Prompt: ${promptPreview}...\n`);
+    }
 
     const { spawn } = await import("child_process");
 
@@ -290,9 +312,15 @@ export class ClaudeCodeExecutor {
 
       proc.stderr?.on("data", (data: Buffer) => {
         stderr += data.toString();
+        if (this.verbose) {
+          process.stderr.write(`[forge:stderr] ${data.toString()}`);
+        }
       });
 
       proc.on("close", (code) => {
+        if (this.verbose) {
+          process.stderr.write(`[forge] Process exited with code ${code}, stdout ${stdout.length} bytes\n`);
+        }
         const raw: RawClaudeOutput = {
           stdout,
           stderr,
@@ -302,6 +330,9 @@ export class ClaudeCodeExecutor {
       });
 
       proc.on("error", (err) => {
+        if (this.verbose) {
+          process.stderr.write(`[forge] Process error: ${err.message}\n`);
+        }
         resolve({
           status: "error",
           exitSignal: false,

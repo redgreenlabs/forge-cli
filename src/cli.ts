@@ -138,6 +138,7 @@ program
   .option("--solo", "Run in solo mode (single agent)")
   .option("--dry-run", "Simulate execution without running Claude")
   .option("--resume", "Resume from previous run, skipping completed tasks")
+  .option("-v, --verbose", "Show detailed executor output")
   .action(async (options) => {
     const cwd = process.cwd();
     const forgeDir = resolve(cwd, ".forge");
@@ -255,7 +256,7 @@ program
 
     // Create executor
     const { ClaudeCodeExecutor } = await import("./loop/executor.js");
-    const executor = new ClaudeCodeExecutor();
+    const executor = new ClaudeCodeExecutor("claude", !!options.verbose);
 
     // Create runner
     const { LoopRunner } = await import("./loop/runner.js");
