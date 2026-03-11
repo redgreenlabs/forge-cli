@@ -268,3 +268,10 @@ export {
   ContextFileManager,
   type ContextFileData,
 } from "./agents/context-file.js";
+
+// Interactive PRD
+export {
+  generatePrdFromAnswers,
+  PrdTemplate,
+  type InteractivePrdAnswers,
+} from "./commands/interactive-prd.js";
