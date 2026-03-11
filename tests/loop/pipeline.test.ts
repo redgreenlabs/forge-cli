@@ -227,4 +227,116 @@ describe("Iteration Pipeline", () => {
       ]);
     });
   });
+
+  describe("retry logic", () => {
+    it("should retry a phase that throws an exception", async () => {
+      let callCount = 0;
+      executor.executeGreenPhase = vi.fn().mockImplementation(async () => {
+        callCount++;
+        if (callCount === 1) {
+          throw new Error("Connection timeout");
+        }
+        return {
+          filesModified: ["src/auth.ts"],
+          testsPass: true,
+          testResults: { total: 1, passed: 1, failed: 0 },
+          error: null,
+        };
+      });
+
+      const pipeline = createPipeline({ maxPhaseRetries: 2, retryDelayMs: 0 });
+      const result = await pipeline.execute(executor, onPhaseChange);
+
+      expect(result.completed).toBe(true);
+      expect(callCount).toBe(2);
+    });
+
+    it("should fail after exhausting retries", async () => {
+      executor.executeGreenPhase = vi.fn().mockRejectedValue(new Error("Always fails"));
+
+      const pipeline = createPipeline({ maxPhaseRetries: 2, retryDelayMs: 0 });
+      const result = await pipeline.execute(executor, onPhaseChange);
+
+      expect(result.completed).toBe(false);
+      expect(result.error).toContain("threw");
+      // 1 initial + 2 retries = 3 calls
+      expect(executor.executeGreenPhase).toHaveBeenCalledTimes(3);
+    });
+
+    it("should retry Green phase when tests fail with retries enabled", async () => {
+      let callCount = 0;
+      executor.executeGreenPhase = vi.fn().mockImplementation(async () => {
+        callCount++;
+        if (callCount <= 2) {
+          return {
+            filesModified: ["src/auth.ts"],
+            testsPass: false,
+            testResults: { total: 2, passed: 1, failed: 1 },
+            error: null,
+          };
+        }
+        return {
+          filesModified: ["src/auth.ts"],
+          testsPass: true,
+          testResults: { total: 2, passed: 2, failed: 0 },
+          error: null,
+        };
+      });
+
+      const pipeline = createPipeline({ maxPhaseRetries: 2, retryDelayMs: 0 });
+      const result = await pipeline.execute(executor, onPhaseChange);
+
+      expect(result.completed).toBe(true);
+    });
+
+    it("should not retry when maxPhaseRetries is 0", async () => {
+      executor.executeGreenPhase = vi.fn().mockRejectedValue(new Error("Fails"));
+
+      const pipeline = createPipeline({ maxPhaseRetries: 0, retryDelayMs: 0 });
+      const result = await pipeline.execute(executor, onPhaseChange);
+
+      expect(result.completed).toBe(false);
+      expect(executor.executeGreenPhase).toHaveBeenCalledTimes(1);
+    });
+
+    it("should retry Red phase on exception", async () => {
+      let callCount = 0;
+      executor.executeRedPhase = vi.fn().mockImplementation(async () => {
+        callCount++;
+        if (callCount === 1) throw new Error("Timeout");
+        return {
+          filesModified: ["tests/auth.test.ts"],
+          testsPass: false,
+          testResults: { total: 1, passed: 0, failed: 1 },
+          error: null,
+        };
+      });
+
+      const pipeline = createPipeline({ maxPhaseRetries: 1, retryDelayMs: 0 });
+      const result = await pipeline.execute(executor, onPhaseChange);
+
+      expect(result.completed).toBe(true);
+      expect(callCount).toBe(2);
+    });
+
+    it("should retry Refactor phase on exception", async () => {
+      let callCount = 0;
+      executor.executeRefactorPhase = vi.fn().mockImplementation(async () => {
+        callCount++;
+        if (callCount === 1) throw new Error("Process killed");
+        return {
+          filesModified: ["src/auth.ts"],
+          testsPass: true,
+          testResults: { total: 1, passed: 1, failed: 0 },
+          error: null,
+        };
+      });
+
+      const pipeline = createPipeline({ maxPhaseRetries: 1, retryDelayMs: 0 });
+      const result = await pipeline.execute(executor, onPhaseChange);
+
+      expect(result.completed).toBe(true);
+      expect(callCount).toBe(2);
+    });
+  });
 });

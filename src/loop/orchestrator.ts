@@ -230,6 +230,8 @@ export class LoopOrchestrator {
         securityEnabled: this._config.security.enabled,
         qualityGatesEnabled: true,
         autoCommit: this._config.tdd.commitPerPhase,
+        maxPhaseRetries: this._config.retry.maxPhaseRetries,
+        retryDelayMs: this._config.retry.retryDelayMs,
       });
 
       const pipelineResult = await pipeline.execute(

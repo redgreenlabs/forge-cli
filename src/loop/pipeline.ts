@@ -38,6 +38,10 @@ export interface PipelineConfig {
   securityEnabled: boolean;
   qualityGatesEnabled: boolean;
   autoCommit: boolean;
+  /** Max retries for a failed phase (default 0 = no retry) */
+  maxPhaseRetries?: number;
+  /** Delay between retries in ms (default 1000) */
+  retryDelayMs?: number;
 }
 
 /** Result of a full pipeline execution */
@@ -65,9 +69,13 @@ export interface PipelinePhaseResult {
  */
 export class IterationPipeline {
   private config: PipelineConfig;
+  private maxRetries: number;
+  private retryDelayMs: number;
 
   constructor(config: PipelineConfig) {
     this.config = config;
+    this.maxRetries = config.maxPhaseRetries ?? 0;
+    this.retryDelayMs = config.retryDelayMs ?? 1000;
   }
 
   async execute(
@@ -81,7 +89,10 @@ export class IterationPipeline {
     // === RED PHASE (write failing test) ===
     if (this.config.tddEnabled) {
       onPhaseChange(LoopPhase.Testing);
-      const redResult = await executor.executeRedPhase();
+      const redResult = await this.withRetry(
+        () => executor.executeRedPhase(),
+        "Red phase"
+      );
 
       if (redResult.error) {
         return this.fail(`Red phase failed: ${redResult.error}`, allFiles, commitsCreated, tddPhases);
@@ -100,7 +111,10 @@ export class IterationPipeline {
 
     // === GREEN PHASE (implement to pass tests) ===
     onPhaseChange(LoopPhase.Implementing);
-    const greenResult = await executor.executeGreenPhase();
+    const greenResult = await this.withRetry(
+      () => executor.executeGreenPhase(),
+      "Green phase"
+    );
 
     if (greenResult.error) {
       return this.fail(`Green phase failed: ${greenResult.error}`, allFiles, commitsCreated, tddPhases);
@@ -109,8 +123,24 @@ export class IterationPipeline {
     allFiles.push(...greenResult.filesModified);
     tddPhases.push(TddPhase.Green);
 
-    // Check tests pass after Green
-    if (this.config.tddEnabled && !greenResult.testsPass) {
+    // Check tests pass after Green — retry the Green phase if tests fail
+    if (this.config.tddEnabled && !greenResult.testsPass && this.maxRetries > 0) {
+      const retryResult = await this.withRetry(
+        () => executor.executeGreenPhase(),
+        "Green phase (test fix retry)",
+        (r) => r.testsPass
+      );
+      if (retryResult.testsPass) {
+        allFiles.push(...retryResult.filesModified);
+      } else {
+        return this.fail(
+          `Green phase: tests still failing after retries (${retryResult.testResults.failed} failed)`,
+          allFiles,
+          commitsCreated,
+          tddPhases
+        );
+      }
+    } else if (this.config.tddEnabled && !greenResult.testsPass) {
       return this.fail(
         `Green phase: tests still failing (${greenResult.testResults.failed} failed)`,
         allFiles,
@@ -159,7 +189,10 @@ export class IterationPipeline {
     // === REFACTOR PHASE ===
     if (this.config.tddEnabled) {
       onPhaseChange(LoopPhase.Implementing);
-      const refactorResult = await executor.executeRefactorPhase();
+      const refactorResult = await this.withRetry(
+        () => executor.executeRefactorPhase(),
+        "Refactor phase"
+      );
 
       if (!refactorResult.error) {
         allFiles.push(...refactorResult.filesModified);
@@ -185,6 +218,55 @@ export class IterationPipeline {
     };
   }
 
+  /**
+   * Execute a phase function with retry on transient errors.
+   *
+   * Retries when:
+   * - The phase throws an exception (timeout, process crash)
+   * - An optional successCheck returns false (e.g. tests still failing)
+   *
+   * Returns the last result on exhaustion (does not throw).
+   */
+  private async withRetry(
+    fn: () => Promise<PhaseResult>,
+    phaseName: string,
+    successCheck?: (result: PhaseResult) => boolean
+  ): Promise<PhaseResult> {
+    let lastResult: PhaseResult | null = null;
+
+    for (let attempt = 0; attempt <= this.maxRetries; attempt++) {
+      try {
+        const result = await fn();
+        lastResult = result;
+
+        // If no success check or it passes, return immediately
+        if (!successCheck || successCheck(result)) {
+          return result;
+        }
+
+        // Success check failed — retry if attempts remain
+        if (attempt < this.maxRetries && this.retryDelayMs > 0) {
+          await sleep(this.retryDelayMs);
+        }
+      } catch (err) {
+        const message = err instanceof Error ? err.message : String(err);
+        lastResult = {
+          filesModified: [],
+          testsPass: false,
+          testResults: { total: 0, passed: 0, failed: 0 },
+          error: `${phaseName} threw: ${message}`,
+        };
+
+        // Retry if attempts remain
+        if (attempt < this.maxRetries && this.retryDelayMs > 0) {
+          await sleep(this.retryDelayMs);
+        }
+      }
+    }
+
+    return lastResult!;
+  }
+
   private fail(
     error: string,
     filesModified: string[],
@@ -201,4 +283,9 @@ export class IterationPipeline {
       gatesPassed: true,
     };
   }
+}
+
+/** Simple async delay */
+function sleep(ms: number): Promise<void> {
+  return new Promise((resolve) => setTimeout(resolve, ms));
 }

@@ -67,6 +67,12 @@ const CircuitBreakerConfigSchema = z.object({
   autoReset: z.boolean(),
 });
 
+/** Retry configuration for phase execution */
+const RetryConfigSchema = z.object({
+  maxPhaseRetries: z.number().int().min(0).max(5),
+  retryDelayMs: z.number().int().min(0),
+});
+
 /** Agent team configuration */
 const AgentConfigSchema = z.object({
   team: z
@@ -128,6 +134,8 @@ export const ForgeConfigSchema = z.object({
   docs: DocsConfigSchema,
   /** Project commands (auto-detected or user-specified) */
   commands: CommandsConfigSchema,
+  /** Retry settings for failed phases */
+  retry: RetryConfigSchema,
 });
 
 export type ForgeConfig = z.infer<typeof ForgeConfigSchema>;
@@ -190,5 +198,9 @@ export const defaultConfig: ForgeConfig = {
     lint: "npm run lint",
     build: "npm run build",
     typecheck: "npm run typecheck",
+  },
+  retry: {
+    maxPhaseRetries: 1,
+    retryDelayMs: 2000,
   },
 };
