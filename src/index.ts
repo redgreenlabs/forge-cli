@@ -125,9 +125,11 @@ export {
 export {
   initProject,
   detectProjectType,
+  detectCommands,
   ProjectType,
   type InitOptions,
   type InitResult,
+  type ProjectCommands,
 } from "./commands/init.js";
 
 export {

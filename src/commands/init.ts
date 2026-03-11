@@ -49,6 +49,75 @@ export function detectProjectType(projectRoot: string): ProjectType {
   return ProjectType.Unknown;
 }
 
+/** Detected project commands */
+export interface ProjectCommands {
+  test: string;
+  lint: string;
+  build: string;
+  typecheck: string;
+}
+
+/**
+ * Detect appropriate commands based on project type and marker files.
+ *
+ * Checks for common config files (vitest.config, pytest.ini, etc.)
+ * to determine the most likely test/lint/build commands.
+ */
+export function detectCommands(projectRoot: string): ProjectCommands {
+  const projectType = detectProjectType(projectRoot);
+  const has = (f: string) => existsSync(join(projectRoot, f));
+
+  switch (projectType) {
+    case ProjectType.Node: {
+      // Detect test runner
+      let test = "npm test";
+      if (has("vitest.config.ts") || has("vitest.config.js")) {
+        test = "npx vitest run";
+      } else if (has("jest.config.ts") || has("jest.config.js") || has("jest.config.cjs")) {
+        test = "npx jest";
+      }
+
+      // Detect lint
+      let lint = "npm run lint";
+      if (has("biome.json") || has("biome.jsonc")) {
+        lint = "npx biome check";
+      }
+
+      // Detect typecheck
+      const typecheck = has("tsconfig.json") ? "npx tsc --noEmit" : "";
+
+      return { test, lint, build: "npm run build", typecheck };
+    }
+
+    case ProjectType.Python:
+      return {
+        test: has("pytest.ini") || has("pyproject.toml") ? "pytest" : "python -m unittest",
+        lint: has("ruff.toml") || has("pyproject.toml") ? "ruff check" : "flake8",
+        build: "python -m build",
+        typecheck: has("mypy.ini") || has("pyproject.toml") ? "mypy ." : "",
+      };
+
+    case ProjectType.Rust:
+      return {
+        test: "cargo test",
+        lint: "cargo clippy",
+        build: "cargo build",
+        typecheck: "cargo check",
+      };
+
+    case ProjectType.Go:
+      return {
+        test: "go test ./...",
+        lint: has(".golangci.yml") || has(".golangci.yaml") ? "golangci-lint run" : "go vet ./...",
+        build: "go build ./...",
+        typecheck: "",
+      };
+
+    default:
+      return { test: "npm test", lint: "npm run lint", build: "npm run build", typecheck: "" };
+  }
+}
+
 /**
  * Initialize a new Forge project by creating the .forge directory
  * with configuration, templates, and directory structure.
@@ -86,10 +155,12 @@ export async function initProject(
     mkdirSync(dir, { recursive: true });
   }
 
-  // Write config
+  // Write config with auto-detected commands
+  const commands = detectCommands(projectRoot);
+  const config = { ...defaultConfig, commands };
   writeFileSync(
     join(forgeDir, CONFIG_FILE),
-    JSON.stringify(defaultConfig, null, 2) + "\n"
+    JSON.stringify(config, null, 2) + "\n"
   );
   createdFiles.push(CONFIG_FILE);
 

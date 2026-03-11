@@ -92,6 +92,14 @@ const DocsConfigSchema = z.object({
   apiDocs: z.boolean(),
 });
 
+/** Project command configuration */
+const CommandsConfigSchema = z.object({
+  test: z.string(),
+  lint: z.string(),
+  build: z.string(),
+  typecheck: z.string(),
+});
+
 /** Main Forge configuration schema */
 export const ForgeConfigSchema = z.object({
   /** Maximum loop iterations before forced stop */
@@ -118,6 +126,8 @@ export const ForgeConfigSchema = z.object({
   qualityGates: QualityGatesConfigSchema,
   /** Documentation settings */
   docs: DocsConfigSchema,
+  /** Project commands (auto-detected or user-specified) */
+  commands: CommandsConfigSchema,
 });
 
 export type ForgeConfig = z.infer<typeof ForgeConfigSchema>;
@@ -174,5 +184,11 @@ export const defaultConfig: ForgeConfig = {
     adr: true,
     changelog: true,
     apiDocs: true,
+  },
+  commands: {
+    test: "npm test",
+    lint: "npm run lint",
+    build: "npm run build",
+    typecheck: "npm run typecheck",
   },
 };

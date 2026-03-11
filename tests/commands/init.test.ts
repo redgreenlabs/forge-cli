@@ -5,6 +5,7 @@ import { tmpdir } from "os";
 import {
   initProject,
   detectProjectType,
+  detectCommands,
   type InitOptions,
   type InitResult,
   ProjectType,
@@ -135,6 +136,106 @@ describe("forge init", () => {
 
     it("should return Unknown for unrecognized projects", () => {
       expect(detectProjectType(tmpDir)).toBe(ProjectType.Unknown);
+    });
+  });
+
+  describe("detectCommands", () => {
+    it("should detect default Node commands from package.json", () => {
+      const fs = require("fs");
+      fs.writeFileSync(join(tmpDir, "package.json"), JSON.stringify({ name: "test" }));
+      const cmds = detectCommands(tmpDir);
+      expect(cmds.test).toBe("npm test");
+      expect(cmds.lint).toBe("npm run lint");
+      expect(cmds.build).toBe("npm run build");
+      expect(cmds.typecheck).toBe("");
+    });
+
+    it("should detect vitest when vitest.config.ts exists", () => {
+      const fs = require("fs");
+      fs.writeFileSync(join(tmpDir, "package.json"), "{}");
+      fs.writeFileSync(join(tmpDir, "vitest.config.ts"), "export default {}");
+      const cmds = detectCommands(tmpDir);
+      expect(cmds.test).toBe("npx vitest run");
+    });
+
+    it("should detect jest when jest.config.ts exists", () => {
+      const fs = require("fs");
+      fs.writeFileSync(join(tmpDir, "package.json"), "{}");
+      fs.writeFileSync(join(tmpDir, "jest.config.ts"), "module.exports = {}");
+      const cmds = detectCommands(tmpDir);
+      expect(cmds.test).toBe("npx jest");
+    });
+
+    it("should detect biome for linting", () => {
+      const fs = require("fs");
+      fs.writeFileSync(join(tmpDir, "package.json"), "{}");
+      fs.writeFileSync(join(tmpDir, "biome.json"), "{}");
+      const cmds = detectCommands(tmpDir);
+      expect(cmds.lint).toBe("npx biome check");
+    });
+
+    it("should detect tsc typecheck when tsconfig.json exists", () => {
+      const fs = require("fs");
+      fs.writeFileSync(join(tmpDir, "package.json"), "{}");
+      fs.writeFileSync(join(tmpDir, "tsconfig.json"), "{}");
+      const cmds = detectCommands(tmpDir);
+      expect(cmds.typecheck).toBe("npx tsc --noEmit");
+    });
+
+    it("should detect Python commands from pyproject.toml", () => {
+      const fs = require("fs");
+      fs.writeFileSync(join(tmpDir, "pyproject.toml"), "[project]");
+      const cmds = detectCommands(tmpDir);
+      expect(cmds.test).toBe("pytest");
+      expect(cmds.lint).toBe("ruff check");
+      expect(cmds.build).toBe("python -m build");
+    });
+
+    it("should detect Rust commands from Cargo.toml", () => {
+      const fs = require("fs");
+      fs.writeFileSync(join(tmpDir, "Cargo.toml"), "[package]");
+      const cmds = detectCommands(tmpDir);
+      expect(cmds.test).toBe("cargo test");
+      expect(cmds.lint).toBe("cargo clippy");
+      expect(cmds.build).toBe("cargo build");
+      expect(cmds.typecheck).toBe("cargo check");
+    });
+
+    it("should detect Go commands from go.mod", () => {
+      const fs = require("fs");
+      fs.writeFileSync(join(tmpDir, "go.mod"), "module example.com/app");
+      const cmds = detectCommands(tmpDir);
+      expect(cmds.test).toBe("go test ./...");
+      expect(cmds.lint).toBe("go vet ./...");
+      expect(cmds.build).toBe("go build ./...");
+    });
+
+    it("should detect golangci-lint for Go when config exists", () => {
+      const fs = require("fs");
+      fs.writeFileSync(join(tmpDir, "go.mod"), "module example.com/app");
+      fs.writeFileSync(join(tmpDir, ".golangci.yml"), "linters:");
+      const cmds = detectCommands(tmpDir);
+      expect(cmds.lint).toBe("golangci-lint run");
+    });
+
+    it("should return npm defaults for unknown project types", () => {
+      const cmds = detectCommands(tmpDir);
+      expect(cmds.test).toBe("npm test");
+      expect(cmds.lint).toBe("npm run lint");
+      expect(cmds.build).toBe("npm run build");
+    });
+
+    it("should write detected commands in config during init", async () => {
+      const fs = require("fs");
+      fs.writeFileSync(join(tmpDir, "package.json"), "{}");
+      fs.writeFileSync(join(tmpDir, "vitest.config.ts"), "export default {}");
+      fs.writeFileSync(join(tmpDir, "tsconfig.json"), "{}");
+
+      await initProject(tmpDir, {});
+      const configPath = join(tmpDir, ".forge", "forge.config.json");
+      const config = JSON.parse(readFileSync(configPath, "utf-8"));
+      expect(config.commands.test).toBe("npx vitest run");
+      expect(config.commands.typecheck).toBe("npx tsc --noEmit");
     });
   });
 });

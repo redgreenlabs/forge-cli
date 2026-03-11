@@ -402,8 +402,8 @@ export class LoopOrchestrator {
         const registry = new gatePlugin.GatePluginRegistry();
         const builtins = gatePlugin.createBuiltinGates({
           projectRoot: this._projectRoot,
-          testCommand: "npm test",
-          lintCommand: "npm run lint",
+          testCommand: this._config.commands.test,
+          lintCommand: this._config.commands.lint,
         });
         for (const gate of builtins) {
           registry.register(gate);
