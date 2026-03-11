@@ -137,6 +137,7 @@ program
   .option("--no-tui", "Disable TUI dashboard (plain text output)")
   .option("--solo", "Run in solo mode (single agent)")
   .option("--dry-run", "Simulate execution without running Claude")
+  .option("--resume", "Resume from previous run, skipping completed tasks")
   .action(async (options) => {
     const cwd = process.cwd();
     const forgeDir = resolve(cwd, ".forge");
@@ -170,6 +171,9 @@ program
       console.log(
         chalk.cyan(`Resuming session ${session.sessionId.slice(0, 8)}...`)
       );
+      if (options.resume) {
+        console.log(chalk.cyan("  --resume: will skip previously completed tasks"));
+      }
     } else {
       session.create();
       console.log(
@@ -262,6 +266,7 @@ program
       projectRoot: cwd,
       forgeDir: runCtx.forgeDir,
       sessionId: session.claudeSessionId ?? undefined,
+      resume: options.resume as boolean | undefined,
       onDashboardUpdate: (dashState) => {
         if (options.tui !== false) {
           // Clear and re-render terminal dashboard

@@ -1,8 +1,11 @@
+import { appendFileSync, mkdirSync, existsSync } from "fs";
+import { join } from "path";
 import type { ForgeConfig } from "../config/schema.js";
 import type { PrdTask } from "../prd/parser.js";
 import type { ClaudeExecutor, DashboardState } from "./orchestrator.js";
 import { LoopOrchestrator } from "./orchestrator.js";
 import { ContextFileManager } from "../agents/context-file.js";
+import type { AgentLogEntry } from "../tui/renderer.js";
 
 /** Options for the loop runner */
 export interface LoopRunnerOptions {
@@ -12,6 +15,8 @@ export interface LoopRunnerOptions {
   projectRoot?: string;
   forgeDir?: string;
   sessionId?: string;
+  /** Resume from previous run, skipping completed tasks */
+  resume?: boolean;
   onDashboardUpdate?: (state: DashboardState) => void;
 }
 
@@ -37,6 +42,8 @@ export class LoopRunner {
   private contextManager: ContextFileManager | null;
   private errors: string[] = [];
   private startedAt: number = 0;
+  private resume: boolean;
+  private logFilePath: string | null = null;
 
   constructor(options: LoopRunnerOptions) {
     this.orchestrator = new LoopOrchestrator({
@@ -48,10 +55,22 @@ export class LoopRunner {
       onDashboardUpdate: options.onDashboardUpdate ?? (() => {}),
     });
 
+    this.resume = options.resume ?? false;
+
     // Set up context persistence if forgeDir is provided
     this.contextManager = options.forgeDir
       ? ContextFileManager.load(options.forgeDir)
       : null;
+
+    // Set up log file
+    if (options.forgeDir) {
+      const logsDir = join(options.forgeDir, "logs");
+      if (!existsSync(logsDir)) {
+        mkdirSync(logsDir, { recursive: true });
+      }
+      const sessionTag = options.sessionId?.slice(0, 8) ?? Date.now().toString(36);
+      this.logFilePath = join(logsDir, `${sessionTag}.jsonl`);
+    }
   }
 
   /**
@@ -70,6 +89,29 @@ export class LoopRunner {
       }
     }
 
+    // Resume: restore completed task IDs from context
+    if (this.resume && this.contextManager) {
+      const completedIds = this.contextManager.getSharedState("completedTaskIds") as string[] | undefined;
+      if (completedIds && completedIds.length > 0) {
+        for (const taskId of completedIds) {
+          this.orchestrator.markTaskComplete(taskId);
+        }
+        this.writeLog({
+          timestamp: Date.now(),
+          agent: "system",
+          action: "resume",
+          detail: `Restored ${completedIds.length} completed tasks from previous run`,
+        });
+      }
+    }
+
+    this.writeLog({
+      timestamp: Date.now(),
+      agent: "system",
+      action: "start",
+      detail: `Loop started (resume=${this.resume})`,
+    });
+
     try {
       await this.orchestrator.runLoop(signal);
     } catch (err) {
@@ -78,12 +120,20 @@ export class LoopRunner {
       );
     }
 
-    // Save handoff context for next run
+    // Persist agent logs to disk
+    this.flushLogs();
+
+    // Save context for next run
     if (this.contextManager) {
       try {
         this.contextManager.handoff = this.orchestrator.handoffContext;
         this.contextManager.setSharedState("lastIteration", this.orchestrator.state.iteration);
         this.contextManager.setSharedState("committedCount", this.orchestrator.committedCount);
+
+        // Persist completed task IDs for resume
+        const completedIds = this.getCompletedTaskIds();
+        this.contextManager.setSharedState("completedTaskIds", completedIds);
+
         this.contextManager.save();
       } catch {
         // Non-fatal — context won't persist
@@ -103,6 +153,14 @@ export class LoopRunner {
       stopReason = "aborted";
     }
 
+    this.writeLog({
+      timestamp: Date.now(),
+      agent: "system",
+      action: "end",
+      detail: `Loop ended: ${stopReason} (${state.tasksCompleted}/${state.totalTasks} tasks)`,
+    });
+    this.flushLogs();
+
     return {
       iterations: state.iteration,
       tasksCompleted: state.tasksCompleted,
@@ -112,5 +170,35 @@ export class LoopRunner {
       startedAt: this.startedAt,
       errors: [...this.errors],
     };
+  }
+
+  /** Get IDs of completed tasks from the orchestrator state */
+  private getCompletedTaskIds(): string[] {
+    const state = this.orchestrator.state;
+    return [...state.completedTaskIds];
+  }
+
+  /** Write a single log entry to the log file */
+  private writeLog(entry: AgentLogEntry): void {
+    if (!this.logFilePath) return;
+    try {
+      appendFileSync(this.logFilePath, JSON.stringify(entry) + "\n");
+    } catch {
+      // Non-fatal
+    }
+  }
+
+  /** Flush all orchestrator agent logs to disk */
+  private flushLogs(): void {
+    if (!this.logFilePath) return;
+    try {
+      const logs = this.orchestrator.agentLog;
+      const lines = logs.map((entry) => JSON.stringify(entry)).join("\n");
+      if (lines) {
+        appendFileSync(this.logFilePath, lines + "\n");
+      }
+    } catch {
+      // Non-fatal
+    }
   }
 }

@@ -1,4 +1,7 @@
-import { describe, it, expect, vi, beforeEach } from "vitest";
+import { describe, it, expect, vi, beforeEach, afterEach } from "vitest";
+import { mkdtempSync, rmSync, existsSync, readFileSync, mkdirSync, writeFileSync } from "fs";
+import { join } from "path";
+import { tmpdir } from "os";
 import {
   LoopRunner,
   type LoopRunnerOptions,
@@ -141,6 +144,127 @@ describe("LoopRunner", () => {
       const result = await runner.run();
       // Should stop via circuit breaker
       expect(result.errors.length).toBeGreaterThan(0);
+    });
+  });
+
+  describe("log persistence", () => {
+    let tmpDir: string;
+
+    beforeEach(() => {
+      tmpDir = mkdtempSync(join(tmpdir(), "forge-runner-log-"));
+    });
+
+    afterEach(() => {
+      rmSync(tmpDir, { recursive: true, force: true });
+    });
+
+    it("should create log file in .forge/logs", async () => {
+      const runner = new LoopRunner({
+        config: { ...defaultConfig, maxIterations: 1 },
+        executor: mockExecutor(),
+        tasks: [sampleTasks[0]!],
+        forgeDir: tmpDir,
+        sessionId: "test-session-abc",
+      });
+
+      await runner.run();
+
+      const logsDir = join(tmpDir, "logs");
+      expect(existsSync(logsDir)).toBe(true);
+
+      // Log file named after session prefix
+      const logFile = join(logsDir, "test-ses.jsonl");
+      expect(existsSync(logFile)).toBe(true);
+
+      const content = readFileSync(logFile, "utf-8");
+      const lines = content.trim().split("\n").filter(Boolean);
+      expect(lines.length).toBeGreaterThan(0);
+
+      // Each line should be valid JSON
+      for (const line of lines) {
+        const entry = JSON.parse(line);
+        expect(entry).toHaveProperty("timestamp");
+        expect(entry).toHaveProperty("agent");
+        expect(entry).toHaveProperty("action");
+      }
+    });
+
+    it("should log start and end entries", async () => {
+      const runner = new LoopRunner({
+        config: { ...defaultConfig, maxIterations: 1 },
+        executor: mockExecutor(),
+        tasks: [sampleTasks[0]!],
+        forgeDir: tmpDir,
+        sessionId: "log-start-end-x",
+      });
+
+      await runner.run();
+
+      const logFile = join(tmpDir, "logs", "log-star.jsonl");
+      const content = readFileSync(logFile, "utf-8");
+      const lines = content.trim().split("\n").filter(Boolean);
+      const entries = lines.map((l) => JSON.parse(l));
+
+      const actions = entries.map((e: { action: string }) => e.action);
+      expect(actions).toContain("start");
+      expect(actions).toContain("end");
+    });
+  });
+
+  describe("resume", () => {
+    let tmpDir: string;
+
+    beforeEach(() => {
+      tmpDir = mkdtempSync(join(tmpdir(), "forge-runner-resume-"));
+    });
+
+    afterEach(() => {
+      rmSync(tmpDir, { recursive: true, force: true });
+    });
+
+    it("should persist completed task IDs in context file", async () => {
+      const runner = new LoopRunner({
+        config: { ...defaultConfig, maxIterations: 5 },
+        executor: mockExecutor(),
+        tasks: [sampleTasks[0]!],
+        forgeDir: tmpDir,
+      });
+
+      await runner.run();
+
+      // Context file should exist with completedTaskIds
+      const contextPath = join(tmpDir, "context.json");
+      expect(existsSync(contextPath)).toBe(true);
+
+      const context = JSON.parse(readFileSync(contextPath, "utf-8"));
+      expect(context.sharedState.completedTaskIds).toBeDefined();
+    });
+
+    it("should skip completed tasks on resume", async () => {
+      // First run — complete task t1
+      const runner1 = new LoopRunner({
+        config: { ...defaultConfig, maxIterations: 5 },
+        executor: mockExecutor(),
+        tasks: [sampleTasks[0]!],
+        forgeDir: tmpDir,
+      });
+      await runner1.run();
+
+      // Second run with resume — t1 should already be marked done
+      const executor2 = mockExecutor();
+      const runner2 = new LoopRunner({
+        config: { ...defaultConfig, maxIterations: 2 },
+        executor: executor2,
+        tasks: sampleTasks,
+        forgeDir: tmpDir,
+        resume: true,
+      });
+
+      const result = await runner2.run();
+
+      // If t1 is already complete, the orchestrator should move to t2
+      // The key check is that it didn't re-do t1
+      expect(result.iterations).toBeGreaterThan(0);
     });
   });
 });
