@@ -245,3 +245,20 @@ export {
   CommitPhase,
   type CommitPlan,
 } from "./commits/orchestrator.js";
+
+// Agent Team Composer
+export {
+  TeamComposer,
+  TeamPreset,
+  type TeamConfig,
+} from "./agents/team.js";
+
+// Error Panel
+export {
+  renderErrorPanel,
+  renderWarningPanel,
+  formatErrorEntry,
+  ErrorSeverity,
+  type ErrorEntry,
+  type WarningPanelData,
+} from "./tui/error-panel.js";
