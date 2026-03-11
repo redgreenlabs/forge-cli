@@ -217,3 +217,31 @@ export {
   type SecurityMetrics,
   type AgentLogEntry,
 } from "./tui/renderer.js";
+
+// Agent Handoff Protocol
+export {
+  HandoffContext,
+  HandoffPriority,
+  type HandoffEntry,
+  type HandoffInput,
+  type HandoffConflict,
+  type HandoffSnapshot,
+} from "./agents/handoff.js";
+
+// Dependency Audit
+export {
+  parseNpmAudit,
+  parsePipAudit,
+  parseCargoAudit,
+  AuditResult,
+  DepSeverity,
+  type DepVulnerability,
+  type AuditSummary,
+} from "./security/dep-audit.js";
+
+// Commit Orchestrator
+export {
+  CommitOrchestrator,
+  CommitPhase,
+  type CommitPlan,
+} from "./commits/orchestrator.js";
