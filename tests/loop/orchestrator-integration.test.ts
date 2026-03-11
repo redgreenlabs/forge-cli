@@ -94,7 +94,8 @@ describe("Orchestrator Integration", () => {
       await orch.runIteration();
 
       const lastState = dashboardStates[dashboardStates.length - 1]!;
-      expect(lastState.handoffEntries).toBe(1);
+      // 1 manually added + 1 auto-added by orchestrator after completion
+      expect(lastState.handoffEntries).toBe(2);
     });
   });
 

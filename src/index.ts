@@ -177,6 +177,15 @@ export {
   type RunContext,
 } from "./commands/run.js";
 
+// Iteration Pipeline
+export {
+  IterationPipeline,
+  type PipelineConfig,
+  type PhaseExecutor,
+  type PhaseResult,
+  type PipelinePhaseResult,
+} from "./loop/pipeline.js";
+
 // Loop Runner
 export {
   LoopRunner,

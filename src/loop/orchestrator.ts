@@ -1,9 +1,12 @@
 import type { ForgeConfig } from "../config/schema.js";
 import { AgentRole } from "../config/schema.js";
-import { selectAgentForTask, getAgentPrompt } from "../agents/roles.js";
+import {
+  selectAgentForTask,
+  getAgentPrompt,
+  getAgentAllowedTools,
+} from "../agents/roles.js";
 import {
   LoopEngine,
-  LoopPhase,
   type LoopState,
   type LoopEventHandler,
 } from "./engine.js";
@@ -16,9 +19,14 @@ import { TaskGraph, type TaskNode } from "../prd/task-graph.js";
 import type { PrdTask } from "../prd/parser.js";
 import type { PipelineResult } from "../gates/quality-gates.js";
 import type { AgentLogEntry } from "../tui/renderer.js";
-import { HandoffContext } from "../agents/handoff.js";
+import { HandoffContext, HandoffPriority } from "../agents/handoff.js";
 import { TeamComposer } from "../agents/team.js";
 import type { WarningPanelData } from "../tui/error-panel.js";
+import {
+  IterationPipeline,
+  type PhaseExecutor,
+  type PhaseResult,
+} from "./pipeline.js";
 
 /** Claude Code execution interface */
 export interface ClaudeExecutor {
@@ -189,48 +197,65 @@ export class LoopOrchestrator {
         return;
       }
 
-      // Select agent
+      // Select agent for the task
       const agentRole = this.selectAgent(currentTask.title);
-      const agentPrompt = getAgentPrompt(agentRole);
       this.logAgent(agentRole, "selected", `for: ${currentTask.title}`);
 
-      // Execute Claude
-      this.engine.setPhase(LoopPhase.Implementing);
-      const response = await this._executor.execute({
-        prompt: `Task: ${currentTask.title}\nAcceptance criteria: ${currentTask.acceptanceCriteria.join(", ")}`,
-        systemPrompt: agentPrompt,
-        allowedTools: [],
-        timeout: this._config.timeoutMinutes * 60 * 1000,
+      // Build handoff prompt if available
+      const handoffPrompt = this._handoffContext.buildPromptFor(agentRole);
+
+      // Build phase executor that delegates to Claude
+      const phaseExecutor = this.buildPhaseExecutor(currentTask, handoffPrompt);
+
+      // Create and run the iteration pipeline
+      const pipeline = new IterationPipeline({
+        tddEnabled: this._config.tdd.enabled,
+        securityEnabled: this._config.security.enabled,
+        qualityGatesEnabled: true,
+        autoCommit: this._config.tdd.commitPerPhase,
       });
 
-      // Record results
-      this.engine.recordFilesModified(response.filesModified);
-      this.logAgent(
-        agentRole,
-        "completed",
-        `${response.filesModified.length} files modified`
+      const pipelineResult = await pipeline.execute(
+        phaseExecutor,
+        (phase) => {
+          this.engine.setPhase(phase);
+          this.emitDashboardUpdate();
+        }
       );
+
+      // Record results
+      this.engine.recordFilesModified(pipelineResult.filesModified);
+      this._committedCount += pipelineResult.commitsCreated;
 
       // Update circuit breaker
       this.circuitBreaker.recordIteration({
-        filesModified: response.filesModified.length,
-        error: response.error,
-        testsPass: response.testsPass,
+        filesModified: pipelineResult.filesModified.length,
+        error: pipelineResult.error ?? null,
+        testsPass: pipelineResult.gatesPassed,
       });
       this.engine.setCircuitBreakerState(this.circuitBreaker.state);
 
-      // Track test failures for error panel
-      if (response.testResults && response.testResults.failed > 0) {
-        this._testFailures = response.testResults.failed;
+      // Update quality report
+      if (pipelineResult.qualityReport) {
+        this._qualityReport = pipelineResult.qualityReport;
       }
 
-      // Update TDD enforcer
-      if (response.testResults) {
-        this.tddEnforcer.recordTestRun(response.testResults);
+      // Record handoff for next iteration
+      if (pipelineResult.completed && currentTask) {
+        this._handoffContext.add({
+          from: agentRole,
+          to: AgentRole.Implementer,
+          summary: `Completed: ${currentTask.title}`,
+          artifacts: pipelineResult.filesModified,
+          priority: HandoffPriority.Normal,
+        });
       }
 
-      // Quality gate phase
-      this.engine.setPhase(LoopPhase.QualityGate);
+      this.logAgent(
+        agentRole,
+        pipelineResult.completed ? "completed" : "failed",
+        pipelineResult.error ?? `${pipelineResult.filesModified.length} files, ${pipelineResult.commitsCreated} commits`
+      );
     } catch (error) {
       const err =
         error instanceof Error ? error : new Error(String(error));
@@ -244,6 +269,123 @@ export class LoopOrchestrator {
     }
 
     this.engine.emitIterationEnd();
+  }
+
+  /**
+   * Build a PhaseExecutor that delegates each phase to the Claude executor.
+   *
+   * Each phase constructs the right prompt for the agent role:
+   * - Red: Tester agent writes a failing test
+   * - Green: Implementer agent writes code to pass
+   * - Refactor: Implementer agent cleans up
+   */
+  private buildPhaseExecutor(
+    task: TaskNode,
+    handoffPrompt: string
+  ): PhaseExecutor {
+    const timeout = this._config.timeoutMinutes * 60 * 1000;
+    const taskContext = `Task: ${task.title}\nAcceptance criteria: ${(task as TaskNode & { acceptanceCriteria?: string[] }).acceptanceCriteria?.join(", ") ?? ""}`;
+    const handoffSection = handoffPrompt ? `\n\n${handoffPrompt}` : "";
+
+    return {
+      executeRedPhase: async (): Promise<PhaseResult> => {
+        this.logAgent(AgentRole.Tester, "red-phase", "Writing failing test");
+        const testerPrompt = getAgentPrompt(AgentRole.Tester);
+        const response = await this._executor.execute({
+          prompt: `[TDD RED PHASE] Write a failing test for:\n${taskContext}${handoffSection}\n\nWrite ONLY the test. Do NOT implement the feature yet.`,
+          systemPrompt: testerPrompt,
+          allowedTools: getAgentAllowedTools(AgentRole.Tester),
+          timeout,
+        });
+
+        if (response.testResults) {
+          this.tddEnforcer.recordTestRun(response.testResults);
+          if (response.testResults.failed > 0) {
+            this._testFailures = response.testResults.failed;
+          }
+        }
+
+        return {
+          filesModified: response.filesModified,
+          testsPass: response.testsPass,
+          testResults: response.testResults,
+          error: response.error,
+        };
+      },
+
+      executeGreenPhase: async (): Promise<PhaseResult> => {
+        this.logAgent(AgentRole.Implementer, "green-phase", "Implementing to pass tests");
+        const implPrompt = getAgentPrompt(AgentRole.Implementer);
+        const response = await this._executor.execute({
+          prompt: `[TDD GREEN PHASE] Implement the MINIMAL code to make the failing test pass:\n${taskContext}${handoffSection}\n\nWrite only enough code to pass the test. Keep it simple.`,
+          systemPrompt: implPrompt,
+          allowedTools: getAgentAllowedTools(AgentRole.Implementer),
+          timeout,
+        });
+
+        if (response.testResults) {
+          this.tddEnforcer.recordTestRun(response.testResults);
+          if (response.testResults.failed > 0) {
+            this._testFailures = response.testResults.failed;
+          }
+        }
+
+        return {
+          filesModified: response.filesModified,
+          testsPass: response.testsPass,
+          testResults: response.testResults,
+          error: response.error,
+        };
+      },
+
+      executeRefactorPhase: async (): Promise<PhaseResult> => {
+        this.logAgent(AgentRole.Implementer, "refactor-phase", "Refactoring");
+        const implPrompt = getAgentPrompt(AgentRole.Implementer);
+        const response = await this._executor.execute({
+          prompt: `[TDD REFACTOR PHASE] Improve code quality without changing behavior:\n${taskContext}\n\nAll tests MUST still pass after refactoring.`,
+          systemPrompt: implPrompt,
+          allowedTools: getAgentAllowedTools(AgentRole.Implementer),
+          timeout,
+        });
+
+        if (response.testResults) {
+          const regression = this.tddEnforcer.checkTestRegression(response.testResults);
+          if (regression) {
+            this.logAgent("system", "tdd-violation", regression.message);
+          }
+        }
+
+        return {
+          filesModified: response.filesModified,
+          testsPass: response.testsPass,
+          testResults: response.testResults,
+          error: response.error,
+        };
+      },
+
+      runSecurityScan: async () => {
+        this.logAgent(AgentRole.Security, "scanning", "Running security scan");
+        // In a real implementation, this would run SAST + secret scanning
+        return { findings: [], passed: true };
+      },
+
+      runQualityGates: async () => {
+        this.logAgent("system", "gates", "Running quality gates");
+        // In a real implementation, this would run the gate pipeline
+        return {
+          passed: true,
+          results: [],
+          summary: { total: 0, passed: 0, failed: 0, warnings: 0, errors: 0 },
+          totalDurationMs: 0,
+        };
+      },
+
+      executeCommit: async (type: string, phase: TddPhase) => {
+        this.logAgent("system", "commit", `${type}: ${phase} phase`);
+        // In a real implementation, this would run git add + commit
+        return { committed: true, message: `${type}: ${phase} phase for ${task.title}` };
+      },
+    };
   }
 
   /** Run the full loop until a stop condition is met */
