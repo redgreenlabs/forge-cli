@@ -262,3 +262,9 @@ export {
   type ErrorEntry,
   type WarningPanelData,
 } from "./tui/error-panel.js";
+
+// Agent Context File
+export {
+  ContextFileManager,
+  type ContextFileData,
+} from "./agents/context-file.js";
