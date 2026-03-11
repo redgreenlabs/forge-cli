@@ -69,6 +69,10 @@ export interface DashboardState {
   agentLog: AgentLogEntry[];
   qualityReport?: PipelineResult;
   handoffEntries: number;
+  /** Currently executing task name */
+  currentTask?: string;
+  /** Number of commits created so far */
+  commitCount: number;
 }
 
 /**
@@ -102,6 +106,7 @@ export class LoopOrchestrator {
   private _testFailures = 0;
   private _projectRoot: string;
   private _sessionId?: string;
+  private _currentTaskName?: string;
 
   constructor(options: OrchestratorOptions) {
     this._config = options.config;
@@ -202,11 +207,14 @@ export class LoopOrchestrator {
 
       if (!currentTask) {
         this.logAgent("system", "info", "No available tasks");
+        this._currentTaskName = undefined;
         this.engine.emitIterationEnd();
         return;
       }
 
       // Select agent for the task
+      this._currentTaskName = currentTask.title;
+      this.emitDashboardUpdate();
       const agentRole = this.selectAgent(currentTask.title);
       this.logAgent(agentRole, "selected", `for: ${currentTask.title}`);
 
@@ -464,6 +472,8 @@ export class LoopOrchestrator {
       agentLog: this._agentLog,
       qualityReport: this._qualityReport,
       handoffEntries: this._handoffContext.entries.length,
+      currentTask: this._currentTaskName,
+      commitCount: this._committedCount,
     });
   }
 }

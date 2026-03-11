@@ -241,10 +241,26 @@ export function renderDashboard(options: {
   security?: SecurityMetrics;
   qualityGates?: PipelineResult;
   agentLog: AgentLogEntry[];
+  currentTask?: string;
+  commitCount?: number;
 }): string {
   const parts: string[] = [];
 
   parts.push(renderHeader(options.state));
+
+  // Show current task if running
+  if (options.currentTask) {
+    const taskDisplay = options.currentTask.length > 38
+      ? options.currentTask.slice(0, 35) + "..."
+      : options.currentTask;
+    parts.push(`  ${chalk.bold("Task:")}      ${chalk.white(taskDisplay)}`);
+  }
+
+  // Show commit count
+  if (options.commitCount !== undefined && options.commitCount > 0) {
+    parts.push(`  ${chalk.bold("Commits:")}   ${chalk.green(String(options.commitCount))}`);
+  }
+
   parts.push(renderTddPhase(options.tddPhase, options.tddCycles));
 
   if (options.coverage) {

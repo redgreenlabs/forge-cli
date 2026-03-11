@@ -272,6 +272,8 @@ program
             tddCycles: dashState.tddCycles,
             agentLog: dashState.agentLog,
             qualityGates: dashState.qualityReport,
+            currentTask: dashState.currentTask,
+            commitCount: dashState.commitCount,
           }));
         }
       },
@@ -354,27 +356,111 @@ program
     const cwd = process.cwd();
     const forgeDir = resolve(cwd, ".forge");
 
-    const session = new SessionManager(forgeDir);
-    session.load();
-
-    if (!session.isActive) {
-      console.log(chalk.gray("No active Forge session."));
+    if (!existsSync(forgeDir)) {
+      console.log(chalk.gray("No .forge directory found. Run `forge init` first."));
       return;
     }
 
+    const session = new SessionManager(forgeDir);
+    session.load();
+
+    // Load context file for handoff and shared state
+    const { ContextFileManager } = await import("./agents/context-file.js");
+    const context = ContextFileManager.load(forgeDir);
+
+    // Load tasks for progress
+    const { prepareRunContext } = await import("./commands/run.js");
+    const runCtx = prepareRunContext(cwd);
+    const totalTasks = runCtx.tasks.length;
+    const completedTasks = runCtx.tasks.filter(
+      (t) => t.status === "done"
+    ).length;
+
+    // Load config for display
+    const { config } = loadConfig(cwd);
+
     if (options.json) {
-      console.log(JSON.stringify(session.state, null, 2));
+      const data = {
+        session: session.isActive ? session.state : null,
+        tasks: { total: totalTasks, completed: completedTasks },
+        context: {
+          handoffEntries: context.handoff.entries.length,
+          lastIteration: context.getSharedState("lastIteration") ?? null,
+          committedCount: context.getSharedState("committedCount") ?? null,
+        },
+        config: {
+          tdd: config.tdd.enabled,
+          security: config.security.enabled,
+          maxIterations: config.maxIterations,
+          commands: config.commands,
+        },
+      };
+      console.log(JSON.stringify(data, null, 2));
     } else {
-      console.log(chalk.bold("Forge Status:"));
-      console.log(`  Session: ${session.sessionId.slice(0, 8)}`);
-      console.log(`  Active:  ${session.isActive ? chalk.green("yes") : chalk.red("no")}`);
-      console.log(`  Expired: ${session.isExpired ? chalk.red("yes") : chalk.green("no")}`);
-      console.log(`  Iteration: ${session.state.lastIteration}`);
-      if (session.claudeSessionId) {
-        console.log(
-          `  Claude Session: ${session.claudeSessionId.slice(0, 8)}`
-        );
+      console.log(chalk.bold.cyan("Forge Status\n"));
+
+      // Session section
+      if (session.isActive) {
+        console.log(chalk.bold("Session"));
+        console.log(`  ID:        ${session.sessionId.slice(0, 8)}`);
+        console.log(`  Active:    ${chalk.green("yes")}`);
+        console.log(`  Expired:   ${session.isExpired ? chalk.red("yes") : chalk.green("no")}`);
+        console.log(`  Iteration: ${session.state.lastIteration}`);
+        if (session.state.lastIterationAt) {
+          const ago = Math.round((Date.now() - session.state.lastIterationAt) / 1000);
+          console.log(`  Last run:  ${formatTimeAgo(ago)}`);
+        }
+        if (session.claudeSessionId) {
+          console.log(`  Claude:    ${session.claudeSessionId.slice(0, 8)}`);
+        }
+        if (session.state.completionReason) {
+          console.log(`  Completed: ${chalk.green(session.state.completionReason)}`);
+        }
+      } else {
+        console.log(chalk.gray("No active session."));
       }
+
+      // Tasks section
+      console.log(chalk.bold("\nTasks"));
+      if (totalTasks > 0) {
+        const pct = Math.round((completedTasks / totalTasks) * 100);
+        const bar = renderProgressBarSimple(pct, 20);
+        console.log(`  Progress:  ${bar} ${completedTasks}/${totalTasks} (${pct}%)`);
+        const remaining = totalTasks - completedTasks;
+        if (remaining > 0) {
+          console.log(`  Remaining: ${remaining} tasks`);
+        } else {
+          console.log(`  ${chalk.green("All tasks complete!")}`);
+        }
+      } else {
+        console.log(chalk.gray("  No tasks loaded. Run `forge import <prd>` first."));
+      }
+
+      // Context section (from last run)
+      const lastIter = context.getSharedState("lastIteration") as number | undefined;
+      const commits = context.getSharedState("committedCount") as number | undefined;
+      const handoffCount = context.handoff.entries.length;
+      if (lastIter || commits || handoffCount > 0) {
+        console.log(chalk.bold("\nLast Run"));
+        if (lastIter) console.log(`  Iterations: ${lastIter}`);
+        if (commits) console.log(`  Commits:    ${commits}`);
+        if (handoffCount > 0) {
+          console.log(`  Handoffs:   ${handoffCount} entries`);
+          // Show last few handoff summaries
+          const recent = context.handoff.entries.slice(-3);
+          for (const entry of recent) {
+            console.log(`    ${chalk.gray("→")} ${entry.summary}`);
+          }
+        }
+      }
+
+      // Config section
+      console.log(chalk.bold("\nConfig"));
+      console.log(`  TDD:        ${config.tdd.enabled ? chalk.green("on") : chalk.gray("off")}`);
+      console.log(`  Security:   ${config.security.enabled ? chalk.green("on") : chalk.gray("off")}`);
+      console.log(`  Max iters:  ${config.maxIterations}`);
+      console.log(`  Test cmd:   ${chalk.cyan(config.commands.test)}`);
+      console.log(`  Lint cmd:   ${chalk.cyan(config.commands.lint)}`);
     }
   });
 
@@ -470,5 +556,20 @@ program
       console.log();
     }
   });
+
+/** Format seconds ago into human-readable string */
+function formatTimeAgo(seconds: number): string {
+  if (seconds < 60) return `${seconds}s ago`;
+  if (seconds < 3600) return `${Math.round(seconds / 60)}m ago`;
+  if (seconds < 86400) return `${Math.round(seconds / 3600)}h ago`;
+  return `${Math.round(seconds / 86400)}d ago`;
+}
+
+/** Simple ASCII progress bar */
+function renderProgressBarSimple(pct: number, width: number): string {
+  const filled = Math.round((pct / 100) * width);
+  const empty = width - filled;
+  return `[${chalk.green("█".repeat(filled))}${chalk.gray("░".repeat(empty))}]`;
+}
 
 program.parse();
