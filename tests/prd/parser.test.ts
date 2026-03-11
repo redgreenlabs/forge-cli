@@ -156,6 +156,32 @@ describe("PRD Parser", () => {
     });
   });
 
+  describe("plain list items", () => {
+    it("should parse plain unordered list items without checkboxes", () => {
+      const markdown = `# PRD
+## Features
+- User authentication [HIGH]
+- Dashboard layout [MEDIUM]
+- API endpoints
+`;
+      const tasks = parseMarkdownTasks(markdown);
+      expect(tasks).toHaveLength(3);
+      expect(tasks[0]?.title).toBe("User authentication");
+      expect(tasks[0]?.priority).toBe(TaskPriority.High);
+    });
+
+    it("should parse plain items with task IDs and dependencies", () => {
+      const markdown = `
+- [task-1] Setup database [CRITICAL]
+- [task-2] Create models (depends: task-1)
+`;
+      const tasks = parseMarkdownTasks(markdown);
+      expect(tasks).toHaveLength(2);
+      expect(tasks[0]?.id).toBe("task-1");
+      expect(tasks[1]?.dependsOn).toEqual(["task-1"]);
+    });
+  });
+
   describe("task dependency detection", () => {
     it("should parse dependency references", () => {
       const markdown = `

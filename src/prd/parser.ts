@@ -151,6 +151,26 @@ export function parseMarkdownTasks(content: string): PrdTask[] {
       continue;
     }
 
+    // Detect plain unordered list items (no checkbox)
+    const plainListMatch = trimmed.match(/^-\s+(?!\[[ xX]\])(.+)$/);
+    if (plainListMatch) {
+      const rawTitle = plainListMatch[1] ?? "";
+      // Only treat as task if it has meaningful content (not a sub-item)
+      if (!line.match(/^\s{2,}/) && rawTitle.length > 0) {
+        currentTask = {
+          id: extractTaskId(rawTitle) ?? generateTaskId(),
+          title: cleanTitle(rawTitle),
+          status: TaskStatus.Pending,
+          priority: detectPriority(rawTitle),
+          category: currentCategory,
+          acceptanceCriteria: [],
+          dependsOn: extractDependencies(rawTitle),
+        };
+        tasks.push(currentTask);
+        continue;
+      }
+    }
+
     // Detect indented sub-items (acceptance criteria)
     const subItemMatch = line.match(/^\s{2,}-\s+(.+)$/);
     if (subItemMatch?.[1] && currentTask) {
