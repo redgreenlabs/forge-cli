@@ -352,6 +352,8 @@ program
   .command("status")
   .description("Show current loop status and quality metrics")
   .option("--json", "Output as JSON")
+  .option("-w, --watch", "Refresh status every few seconds")
+  .option("--interval <seconds>", "Watch interval in seconds", (v) => parseInt(v, 10), 3)
   .action(async (options) => {
     const cwd = process.cwd();
     const forgeDir = resolve(cwd, ".forge");
@@ -361,79 +363,79 @@ program
       return;
     }
 
-    const session = new SessionManager(forgeDir);
-    session.load();
+    const renderStatus = async () => {
+      const session = new SessionManager(forgeDir);
+      session.load();
 
-    // Load context file for handoff and shared state
-    const { ContextFileManager } = await import("./agents/context-file.js");
-    const context = ContextFileManager.load(forgeDir);
+      const { ContextFileManager } = await import("./agents/context-file.js");
+      const context = ContextFileManager.load(forgeDir);
 
-    // Load tasks for progress
-    const { prepareRunContext } = await import("./commands/run.js");
-    const runCtx = prepareRunContext(cwd);
-    const totalTasks = runCtx.tasks.length;
-    const completedTasks = runCtx.tasks.filter(
-      (t) => t.status === "done"
-    ).length;
+      const { prepareRunContext } = await import("./commands/run.js");
+      const runCtx = prepareRunContext(cwd);
+      const totalTasks = runCtx.tasks.length;
+      const completedTasks = runCtx.tasks.filter(
+        (t) => t.status === "done"
+      ).length;
 
-    // Load config for display
-    const { config } = loadConfig(cwd);
+      const { config } = loadConfig(cwd);
 
-    if (options.json) {
-      const data = {
-        session: session.isActive ? session.state : null,
-        tasks: { total: totalTasks, completed: completedTasks },
-        context: {
-          handoffEntries: context.handoff.entries.length,
-          lastIteration: context.getSharedState("lastIteration") ?? null,
-          committedCount: context.getSharedState("committedCount") ?? null,
-        },
-        config: {
-          tdd: config.tdd.enabled,
-          security: config.security.enabled,
-          maxIterations: config.maxIterations,
-          commands: config.commands,
-        },
-      };
-      console.log(JSON.stringify(data, null, 2));
-    } else {
-      console.log(chalk.bold.cyan("Forge Status\n"));
+      if (options.json) {
+        const data = {
+          session: session.isActive ? session.state : null,
+          tasks: { total: totalTasks, completed: completedTasks },
+          context: {
+            handoffEntries: context.handoff.entries.length,
+            lastIteration: context.getSharedState("lastIteration") ?? null,
+            committedCount: context.getSharedState("committedCount") ?? null,
+          },
+          config: {
+            tdd: config.tdd.enabled,
+            security: config.security.enabled,
+            maxIterations: config.maxIterations,
+            commands: config.commands,
+          },
+        };
+        return JSON.stringify(data, null, 2);
+      }
+
+      const lines: string[] = [];
+      lines.push(chalk.bold.cyan("Forge Status\n"));
 
       // Session section
       if (session.isActive) {
-        console.log(chalk.bold("Session"));
-        console.log(`  ID:        ${session.sessionId.slice(0, 8)}`);
-        console.log(`  Active:    ${chalk.green("yes")}`);
-        console.log(`  Expired:   ${session.isExpired ? chalk.red("yes") : chalk.green("no")}`);
-        console.log(`  Iteration: ${session.state.lastIteration}`);
+        lines.push(chalk.bold("Session"));
+        lines.push(`  ID:        ${session.sessionId.slice(0, 8)}`);
+        lines.push(`  Active:    ${chalk.green("yes")}`);
+        lines.push(`  Expired:   ${session.isExpired ? chalk.red("yes") : chalk.green("no")}`);
+        lines.push(`  Iteration: ${session.state.lastIteration}`);
         if (session.state.lastIterationAt) {
           const ago = Math.round((Date.now() - session.state.lastIterationAt) / 1000);
-          console.log(`  Last run:  ${formatTimeAgo(ago)}`);
+          lines.push(`  Last run:  ${formatTimeAgo(ago)}`);
         }
         if (session.claudeSessionId) {
-          console.log(`  Claude:    ${session.claudeSessionId.slice(0, 8)}`);
+          lines.push(`  Claude:    ${session.claudeSessionId.slice(0, 8)}`);
         }
         if (session.state.completionReason) {
-          console.log(`  Completed: ${chalk.green(session.state.completionReason)}`);
+          lines.push(`  Completed: ${chalk.green(session.state.completionReason)}`);
         }
       } else {
-        console.log(chalk.gray("No active session."));
+        lines.push(chalk.gray("No active session."));
       }
 
       // Tasks section
-      console.log(chalk.bold("\nTasks"));
+      lines.push(chalk.bold("\nTasks"));
       if (totalTasks > 0) {
         const pct = Math.round((completedTasks / totalTasks) * 100);
         const bar = renderProgressBarSimple(pct, 20);
-        console.log(`  Progress:  ${bar} ${completedTasks}/${totalTasks} (${pct}%)`);
+        lines.push(`  Progress:  ${bar} ${completedTasks}/${totalTasks} (${pct}%)`);
         const remaining = totalTasks - completedTasks;
         if (remaining > 0) {
-          console.log(`  Remaining: ${remaining} tasks`);
+          lines.push(`  Remaining: ${remaining} tasks`);
         } else {
-          console.log(`  ${chalk.green("All tasks complete!")}`);
+          lines.push(`  ${chalk.green("All tasks complete!")}`);
         }
       } else {
-        console.log(chalk.gray("  No tasks loaded. Run `forge import <prd>` first."));
+        lines.push(chalk.gray("  No tasks loaded. Run `forge import <prd>` first."));
       }
 
       // Context section (from last run)
@@ -441,26 +443,49 @@ program
       const commits = context.getSharedState("committedCount") as number | undefined;
       const handoffCount = context.handoff.entries.length;
       if (lastIter || commits || handoffCount > 0) {
-        console.log(chalk.bold("\nLast Run"));
-        if (lastIter) console.log(`  Iterations: ${lastIter}`);
-        if (commits) console.log(`  Commits:    ${commits}`);
+        lines.push(chalk.bold("\nLast Run"));
+        if (lastIter) lines.push(`  Iterations: ${lastIter}`);
+        if (commits) lines.push(`  Commits:    ${commits}`);
         if (handoffCount > 0) {
-          console.log(`  Handoffs:   ${handoffCount} entries`);
-          // Show last few handoff summaries
+          lines.push(`  Handoffs:   ${handoffCount} entries`);
           const recent = context.handoff.entries.slice(-3);
           for (const entry of recent) {
-            console.log(`    ${chalk.gray("→")} ${entry.summary}`);
+            lines.push(`    ${chalk.gray("→")} ${entry.summary}`);
           }
         }
       }
 
       // Config section
-      console.log(chalk.bold("\nConfig"));
-      console.log(`  TDD:        ${config.tdd.enabled ? chalk.green("on") : chalk.gray("off")}`);
-      console.log(`  Security:   ${config.security.enabled ? chalk.green("on") : chalk.gray("off")}`);
-      console.log(`  Max iters:  ${config.maxIterations}`);
-      console.log(`  Test cmd:   ${chalk.cyan(config.commands.test)}`);
-      console.log(`  Lint cmd:   ${chalk.cyan(config.commands.lint)}`);
+      lines.push(chalk.bold("\nConfig"));
+      lines.push(`  TDD:        ${config.tdd.enabled ? chalk.green("on") : chalk.gray("off")}`);
+      lines.push(`  Security:   ${config.security.enabled ? chalk.green("on") : chalk.gray("off")}`);
+      lines.push(`  Max iters:  ${config.maxIterations}`);
+      lines.push(`  Test cmd:   ${chalk.cyan(config.commands.test)}`);
+      lines.push(`  Lint cmd:   ${chalk.cyan(config.commands.lint)}`);
+
+      return lines.join("\n");
+    };
+
+    if (options.watch) {
+      const intervalMs = (options.interval as number) * 1000;
+      console.log(chalk.gray(`Watching every ${options.interval}s — Ctrl+C to stop\n`));
+
+      const tick = async () => {
+        process.stdout.write("\x1B[2J\x1B[H"); // clear screen
+        console.log(await renderStatus());
+        console.log(chalk.gray(`\n  Refreshing every ${options.interval}s — Ctrl+C to stop`));
+      };
+
+      await tick();
+      const timer = setInterval(tick, intervalMs);
+      process.on("SIGINT", () => {
+        clearInterval(timer);
+        process.exit(0);
+      });
+      // Keep process alive
+      await new Promise(() => {});
+    } else {
+      console.log(await renderStatus());
     }
   });
 
@@ -473,10 +498,12 @@ program
     "terminal"
   )
   .action(async (_options) => {
+    const cwd = process.cwd();
+    const forgeDir = resolve(cwd, ".forge");
     const { generateReport } = await import("./docs/report.js");
 
     const data = {
-      projectName: process.cwd().split("/").pop() ?? "project",
+      projectName: cwd.split("/").pop() ?? "project",
       generatedAt: new Date().toISOString(),
       sessions: { total: 0, totalIterations: 0, averageIterationsPerSession: 0 },
       tests: {
@@ -495,8 +522,8 @@ program
       tdd: { cyclesCompleted: 0, violations: 0 },
     };
 
-    // Try to load session history
-    const historyPath = resolve(process.cwd(), ".forge", "session-history.json");
+    // Load session history
+    const historyPath = resolve(forgeDir, "session-history.json");
     if (existsSync(historyPath)) {
       try {
         const history = JSON.parse(readFileSync(historyPath, "utf-8"));
@@ -512,11 +539,37 @@ program
       } catch {}
     }
 
-    // Try to parse git log for commit stats
+    // Load context file for accumulated stats
+    if (existsSync(forgeDir)) {
+      try {
+        const { ContextFileManager } = await import("./agents/context-file.js");
+        const context = ContextFileManager.load(forgeDir);
+        const tddCycles = context.getSharedState("tddCycles") as number | undefined;
+        const tddViolations = context.getSharedState("tddViolations") as number | undefined;
+        if (tddCycles) data.tdd.cyclesCompleted = tddCycles;
+        if (tddViolations) data.tdd.violations = tddViolations;
+      } catch {}
+    }
+
+    // Load task progress
+    if (existsSync(forgeDir)) {
+      try {
+        const { prepareRunContext } = await import("./commands/run.js");
+        const runCtx = prepareRunContext(cwd);
+        const total = runCtx.tasks.length;
+        const done = runCtx.tasks.filter((t) => t.status === "done").length;
+        if (total > 0) {
+          data.qualityGates.totalRuns = total;
+          data.qualityGates.passRate = Math.round((done / total) * 100);
+        }
+      } catch {}
+    }
+
+    // Parse git log for commit stats
     try {
       const { execSync } = await import("child_process");
       const log = execSync("git log --oneline -100", {
-        cwd: process.cwd(),
+        cwd,
         encoding: "utf-8",
         stdio: ["pipe", "pipe", "pipe"],
       });
