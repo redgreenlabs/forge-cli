@@ -2,12 +2,15 @@ import type { ForgeConfig } from "../config/schema.js";
 import type { PrdTask } from "../prd/parser.js";
 import type { ClaudeExecutor, DashboardState } from "./orchestrator.js";
 import { LoopOrchestrator } from "./orchestrator.js";
+import { ContextFileManager } from "../agents/context-file.js";
 
 /** Options for the loop runner */
 export interface LoopRunnerOptions {
   config: ForgeConfig;
   executor: ClaudeExecutor;
   tasks: PrdTask[];
+  projectRoot?: string;
+  forgeDir?: string;
   onDashboardUpdate?: (state: DashboardState) => void;
 }
 
@@ -30,6 +33,7 @@ export interface RunResult {
  */
 export class LoopRunner {
   private orchestrator: LoopOrchestrator;
+  private contextManager: ContextFileManager | null;
   private errors: string[] = [];
   private startedAt: number = 0;
 
@@ -38,8 +42,14 @@ export class LoopRunner {
       config: options.config,
       executor: options.executor,
       tasks: options.tasks,
+      projectRoot: options.projectRoot,
       onDashboardUpdate: options.onDashboardUpdate ?? (() => {}),
     });
+
+    // Set up context persistence if forgeDir is provided
+    this.contextManager = options.forgeDir
+      ? ContextFileManager.load(options.forgeDir)
+      : null;
   }
 
   /**
@@ -51,12 +61,31 @@ export class LoopRunner {
   async run(signal?: AbortSignal): Promise<RunResult> {
     this.startedAt = Date.now();
 
+    // Restore handoff entries from previous run
+    if (this.contextManager) {
+      for (const entry of this.contextManager.handoff.entries) {
+        this.orchestrator.handoffContext.add(entry);
+      }
+    }
+
     try {
       await this.orchestrator.runLoop(signal);
     } catch (err) {
       this.errors.push(
         err instanceof Error ? err.message : String(err)
       );
+    }
+
+    // Save handoff context for next run
+    if (this.contextManager) {
+      try {
+        this.contextManager.handoff = this.orchestrator.handoffContext;
+        this.contextManager.setSharedState("lastIteration", this.orchestrator.state.iteration);
+        this.contextManager.setSharedState("committedCount", this.orchestrator.committedCount);
+        this.contextManager.save();
+      } catch {
+        // Non-fatal — context won't persist
+      }
     }
 
     // Collect any errors from circuit breaker trips

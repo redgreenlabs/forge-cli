@@ -139,6 +139,13 @@ program
   .option("--dry-run", "Simulate execution without running Claude")
   .action(async (options) => {
     const cwd = process.cwd();
+    const forgeDir = resolve(cwd, ".forge");
+
+    if (!existsSync(forgeDir)) {
+      console.error(chalk.red("No .forge directory found. Run `forge init` first."));
+      process.exit(1);
+    }
+
     const { config, errors } = loadConfig(cwd);
 
     if (errors.length > 0) {
@@ -150,6 +157,10 @@ program
     const effectiveConfig = {
       ...config,
       maxIterations: options.iterations as number,
+      agents: {
+        ...config.agents,
+        soloMode: options.solo ? true : config.agents.soloMode,
+      },
     };
 
     // Session management
@@ -248,6 +259,8 @@ program
       config: effectiveConfig,
       executor,
       tasks: runCtx.tasks,
+      projectRoot: cwd,
+      forgeDir: runCtx.forgeDir,
       onDashboardUpdate: (dashState) => {
         if (options.tui !== false) {
           // Clear and re-render terminal dashboard

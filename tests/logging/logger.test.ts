@@ -1,8 +1,12 @@
-import { describe, it, expect, beforeEach, afterEach } from "vitest";
-import { mkdtempSync, rmSync, existsSync, readFileSync } from "fs";
+import { describe, it, expect, vi, beforeEach, afterEach } from "vitest";
+import { mkdtempSync, rmSync, existsSync } from "fs";
 import { join } from "path";
 import { tmpdir } from "os";
+import pino from "pino";
 import { createLogger, moduleLogger } from "../../src/logging/logger.js";
+
+// Mock pino.transport to avoid spawning worker threads
+vi.spyOn(pino, "transport").mockReturnValue(process.stdout as never);
 
 describe("Structured Logger", () => {
   let tmpDir: string;
@@ -37,7 +41,6 @@ describe("Structured Logger", () => {
     it("should accept forgeDir option without error", () => {
       const forgeDir = join(tmpDir, ".forge");
       const logger = createLogger({ forgeDir, level: "info" });
-      // Logger should be created without throwing
       expect(logger).toBeDefined();
       expect(logger.level).toBe("info");
     });
@@ -53,7 +56,6 @@ describe("Structured Logger", () => {
     it("should include module in log bindings", () => {
       const parent = createLogger();
       const child = moduleLogger(parent, "circuit-breaker");
-      // pino child loggers include bindings
       const bindings = child.bindings();
       expect(bindings.module).toBe("circuit-breaker");
     });

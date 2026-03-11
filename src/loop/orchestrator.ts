@@ -54,6 +54,8 @@ export interface OrchestratorOptions {
   executor: ClaudeExecutor;
   tasks: PrdTask[];
   onDashboardUpdate: (state: DashboardState) => void;
+  /** Project root directory for file operations and git commits */
+  projectRoot?: string;
 }
 
 /** State snapshot for TUI dashboard updates */
@@ -95,11 +97,13 @@ export class LoopOrchestrator {
   private _teamComposer: TeamComposer;
   private _committedCount = 0;
   private _testFailures = 0;
+  private _projectRoot: string;
 
   constructor(options: OrchestratorOptions) {
     this._config = options.config;
     this._executor = options.executor;
     this._onDashboardUpdate = options.onDashboardUpdate;
+    this._projectRoot = options.projectRoot ?? process.cwd();
     this._startTime = Date.now();
 
     const handler: LoopEventHandler = {
@@ -287,6 +291,9 @@ export class LoopOrchestrator {
     const taskContext = `Task: ${task.title}\nAcceptance criteria: ${(task as TaskNode & { acceptanceCriteria?: string[] }).acceptanceCriteria?.join(", ") ?? ""}`;
     const handoffSection = handoffPrompt ? `\n\n${handoffPrompt}` : "";
 
+    // Accumulates files modified across all phases for security scan and commits
+    const allFilesModified: string[] = [];
+
     return {
       executeRedPhase: async (): Promise<PhaseResult> => {
         this.logAgent(AgentRole.Tester, "red-phase", "Writing failing test");
@@ -305,6 +312,7 @@ export class LoopOrchestrator {
           }
         }
 
+        allFilesModified.push(...response.filesModified);
         return {
           filesModified: response.filesModified,
           testsPass: response.testsPass,
@@ -330,6 +338,7 @@ export class LoopOrchestrator {
           }
         }
 
+        allFilesModified.push(...response.filesModified);
         return {
           filesModified: response.filesModified,
           testsPass: response.testsPass,
@@ -355,6 +364,7 @@ export class LoopOrchestrator {
           }
         }
 
+        allFilesModified.push(...response.filesModified);
         return {
           filesModified: response.filesModified,
           testsPass: response.testsPass,
@@ -365,25 +375,40 @@ export class LoopOrchestrator {
 
       runSecurityScan: async () => {
         this.logAgent(AgentRole.Security, "scanning", "Running security scan");
-        // In a real implementation, this would run SAST + secret scanning
-        return { findings: [], passed: true };
+        const phaseImpl = await import("./phase-impl.js");
+        const result = phaseImpl.scanFilesForSecurity(allFilesModified, this._projectRoot);
+        if (!result.passed) {
+          this.logAgent(AgentRole.Security, "findings", `${result.findings.length} issues found`);
+        }
+        return result;
       },
 
       runQualityGates: async () => {
         this.logAgent("system", "gates", "Running quality gates");
-        // In a real implementation, this would run the gate pipeline
-        return {
-          passed: true,
-          results: [],
-          summary: { total: 0, passed: 0, failed: 0, warnings: 0, errors: 0 },
-          totalDurationMs: 0,
-        };
+        const phaseImpl = await import("./phase-impl.js");
+        const gatePlugin = await import("../gates/plugin.js");
+        const registry = new gatePlugin.GatePluginRegistry();
+        const builtins = gatePlugin.createBuiltinGates({
+          projectRoot: this._projectRoot,
+          testCommand: "npm test",
+          lintCommand: "npm run lint",
+        });
+        for (const gate of builtins) {
+          registry.register(gate);
+        }
+        return phaseImpl.runQualityGates(registry.toGateDefinitions());
       },
 
-      executeCommit: async (type: string, phase: TddPhase) => {
-        this.logAgent("system", "commit", `${type}: ${phase} phase`);
-        // In a real implementation, this would run git add + commit
-        return { committed: true, message: `${type}: ${phase} phase for ${task.title}` };
+      executeCommit: async (_type: string, phase: TddPhase) => {
+        this.logAgent("system", "commit", `${phase} phase`);
+        const phaseImpl = await import("./phase-impl.js");
+        return phaseImpl.commitPhase(
+          phase,
+          allFilesModified,
+          task.title,
+          this._projectRoot,
+          task.id
+        );
       },
     };
   }

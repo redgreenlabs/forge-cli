@@ -12,6 +12,7 @@
     "build": "tsup",
     "dev": "tsup --watch",
     "test": "vitest run",
+    "test:smoke": "SMOKE=1 vitest run tests/integration/cli-smoke.test.ts",
     "test:watch": "vitest",
     "test:coverage": "vitest run --coverage",
     "test:security": "npm audit --audit-level=moderate",

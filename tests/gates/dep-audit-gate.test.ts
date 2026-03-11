@@ -1,10 +1,22 @@
-import { describe, it, expect, vi } from "vitest";
+import { describe, it, expect, vi, beforeEach, afterEach } from "vitest";
 import {
   createDepAuditGate,
 } from "../../src/gates/dep-audit-gate.js";
 import { QualityGateSeverity } from "../../src/config/schema.js";
 
+// Mock child_process at the module level — this intercepts dynamic import() too
+vi.mock("child_process", () => ({
+  execSync: vi.fn(),
+}));
+
+import { execSync } from "child_process";
+const mockExecSync = vi.mocked(execSync);
+
 describe("Dependency Audit Gate", () => {
+  beforeEach(() => {
+    mockExecSync.mockReset();
+  });
+
   it("should create a gate plugin", () => {
     const gate = createDepAuditGate({
       projectRoot: "/project",
@@ -16,14 +28,12 @@ describe("Dependency Audit Gate", () => {
   });
 
   it("should pass when audit command succeeds", async () => {
-    vi.doMock("child_process", () => ({
-      execSync: vi.fn().mockReturnValue(JSON.stringify({
-        vulnerabilities: {},
-        metadata: {
-          vulnerabilities: { info: 0, low: 0, moderate: 0, high: 0, critical: 0, total: 0 },
-        },
-      })),
-    }));
+    mockExecSync.mockReturnValue(JSON.stringify({
+      vulnerabilities: {},
+      metadata: {
+        vulnerabilities: { info: 0, low: 0, moderate: 0, high: 0, critical: 0, total: 0 },
+      },
+    }) as unknown as Buffer);
 
     const gate = createDepAuditGate({
       projectRoot: "/project",
@@ -32,8 +42,6 @@ describe("Dependency Audit Gate", () => {
     });
     const result = await gate.check();
     expect(result.passed).toBe(true);
-
-    vi.doUnmock("child_process");
   });
 
   it("should support pip package manager", () => {
@@ -56,11 +64,9 @@ describe("Dependency Audit Gate", () => {
   });
 
   it("should handle missing audit tool gracefully", async () => {
-    vi.doMock("child_process", () => ({
-      execSync: vi.fn().mockImplementation(() => {
-        throw new Error("command not found: npm");
-      }),
-    }));
+    mockExecSync.mockImplementation(() => {
+      throw new Error("command not found: npm");
+    });
 
     const gate = createDepAuditGate({
       projectRoot: "/project",
@@ -68,9 +74,6 @@ describe("Dependency Audit Gate", () => {
       blockOnSeverity: "high",
     });
     const result = await gate.check();
-    // Should not crash, returns a warning
     expect(result.passed).toBe(false);
-
-    vi.doUnmock("child_process");
   });
 });

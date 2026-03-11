@@ -7,6 +7,10 @@ import { tmpdir } from "os";
 const CLI_PATH = join(__dirname, "../../src/cli.ts");
 const TSX = "npx tsx";
 
+// These tests spawn heavy child processes — skip unless CI or explicitly requested
+const RUN_SMOKE = process.env.CI === "true" || process.env.SMOKE === "1";
+const describeSmoke = RUN_SMOKE ? describe : describe.skip;
+
 function runCli(args: string, cwd: string): { stdout: string; exitCode: number } {
   try {
     const stdout = execSync(`${TSX} ${CLI_PATH} ${args}`, {
@@ -22,7 +26,7 @@ function runCli(args: string, cwd: string): { stdout: string; exitCode: number }
   }
 }
 
-describe("CLI Smoke Tests", () => {
+describeSmoke("CLI Smoke Tests", () => {
   let tmpDir: string;
 
   beforeEach(() => {
