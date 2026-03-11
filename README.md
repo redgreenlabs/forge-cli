@@ -161,7 +161,7 @@ src/
 
 ```bash
 npm install          # Install dependencies
-npm test             # Run 394 tests
+npm test             # Run 437 tests
 npm run test:coverage # Run with coverage (94%+ statements)
 npm run typecheck    # TypeScript strict mode check
 npm run build        # Build with tsup
@@ -169,9 +169,9 @@ npm run build        # Build with tsup
 
 ## Quality Metrics
 
-- **394 tests** across 32 test suites
-- **94.5%** statement coverage
-- **86.0%** branch coverage
+- **437 tests** across 38 test suites
+- **94.3%** statement coverage
+- **85.9%** branch coverage
 - **TypeScript strict mode** with no `any` types
 - **Conventional commits** throughout history
 - **Zero runtime dependencies** beyond chalk, commander, ink, pino, zod

@@ -3,7 +3,7 @@
 ## Quick Reference
 
 ```bash
-npm test              # Run all 394 tests
+npm test              # Run all 437 tests
 npm run test:coverage # Run with coverage report (94%+ statements)
 npm run typecheck     # TypeScript strict mode check
 npm run build         # Build with tsup
@@ -11,7 +11,7 @@ npm run build         # Build with tsup
 
 ## Architecture
 
-Forge is a TypeScript ESM project using strict mode. 35 source modules across 32 test suites:
+Forge is a TypeScript ESM project using strict mode. 38 source modules across 38 test suites:
 
 ### Core Loop
 - `src/loop/engine.ts` — Loop state machine with 8 phases and stop conditions
@@ -46,6 +46,7 @@ Forge is a TypeScript ESM project using strict mode. 35 source modules across 32
 ### Quality
 - `src/gates/quality-gates.ts` — Blocking/warning pipeline
 - `src/gates/plugin.ts` — Gate plugin registry with 5 builtins (tests, coverage, security, lint, commit)
+- `src/gates/dep-audit-gate.ts` — Dependency audit gate plugin (npm/pip/cargo)
 - `src/tdd/enforcer.ts` — Red-Green-Refactor enforcement
 - `src/commits/classifier.ts` — Conventional commit classification/validation
 - `src/commits/orchestrator.ts` — TDD phase-based commit planning, scope detection, squash
@@ -64,6 +65,9 @@ Forge is a TypeScript ESM project using strict mode. 35 source modules across 32
 - `src/tui/renderer.ts` — Static colored terminal dashboard panels
 - `src/tui/live-dashboard.tsx` — Ink React live TUI with spinner and progress
 - `src/tui/error-panel.ts` — Error/warning panel with severity sorting and system status
+
+### Logging
+- `src/logging/logger.ts` — Pino structured logger with file transport and module children
 
 ### Entry Points
 - `src/cli.ts` — Commander.js CLI with 6 commands (init, import, run, status, report, agents)
