@@ -83,7 +83,7 @@ git commit -m "initial: minimal TypeScript project"
 # Now init Forge
 echo ""
 echo "=== Initializing Forge ==="
-npx forge init --name "forge-battle-test"
+forge init --name "forge-battle-test"
 
 # Create a focused PRD with 2 small tasks
 cat > .forge/specs/prd.md << 'PRD'
@@ -108,7 +108,7 @@ A small greeting/farewell library to validate the Forge autonomous loop.
 PRD
 
 # Import the PRD
-npx forge import .forge/specs/prd.md
+forge import .forge/specs/prd.md
 
 git add -A
 git commit -m "chore: forge init and import PRD"
