@@ -123,24 +123,29 @@ src/
 │   ├── adr.ts       # Architecture Decision Records
 │   └── changelog.ts # Changelog from conventional commits
 ├── gates/           # Quality enforcement
-│   └── quality-gates.ts # 5-gate pipeline
+│   ├── quality-gates.ts # 5-gate pipeline
+│   └── plugin.ts    # Gate plugin registry with builtins
 ├── loop/            # Core loop engine
 │   ├── engine.ts    # State machine with 8 phases
 │   ├── circuit-breaker.ts # Nygard pattern
 │   ├── executor.ts  # Claude Code CLI integration
 │   ├── orchestrator.ts # Agent + TDD + gates coordination
 │   ├── runner.ts    # High-level loop runner
-│   └── session.ts   # Session persistence
+│   ├── session.ts   # Session persistence
+│   ├── rate-limiter.ts # Sliding-window rate limiter
+│   └── hooks.ts     # Lifecycle hook registry
 ├── prd/             # PRD management
 │   ├── parser.ts    # Markdown/JSON parsing
 │   └── task-graph.ts # DAG with topological sort
 ├── security/        # Security scanning
-│   └── scanner.ts   # Secret detection
+│   ├── scanner.ts   # Secret detection
+│   └── sast.ts      # SAST vulnerability scanner
 ├── tdd/             # TDD enforcement
 │   └── enforcer.ts  # Red-Green-Refactor tracking
 ├── tui/             # Terminal UI
-│   └── renderer.ts  # Colored dashboard panels
-├── cli.ts           # CLI entry point
+│   ├── renderer.ts  # Static dashboard panels
+│   └── live-dashboard.tsx # Ink React live TUI
+├── cli.ts           # CLI entry point (6 commands)
 └── index.ts         # Public API exports
 ```
 
@@ -148,17 +153,17 @@ src/
 
 ```bash
 npm install          # Install dependencies
-npm test             # Run 252 tests
-npm run test:coverage # Run with coverage (95%+ statements)
+npm test             # Run 314 tests
+npm run test:coverage # Run with coverage (93%+ statements)
 npm run typecheck    # TypeScript strict mode check
 npm run build        # Build with tsup
 ```
 
 ## Quality Metrics
 
-- **252 tests** across 19 test suites
-- **95.9%** statement coverage
-- **88.2%** branch coverage
+- **314 tests** across 25 test suites
+- **93.8%** statement coverage
+- **85.8%** branch coverage
 - **TypeScript strict mode** with no `any` types
 - **Conventional commits** throughout history
 - **Zero runtime dependencies** beyond chalk, commander, ink, pino, zod
