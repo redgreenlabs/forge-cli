@@ -39,10 +39,9 @@ export function buildClaudeArgs(options: ClaudeExecOptions): string[] {
   // Output format
   args.push("--output-format", "json");
 
-  // Permission mode — default to bypassPermissions so Claude doesn't hang
-  // waiting for interactive permission prompts
-  const permMode = options.permissionMode ?? "bypassPermissions";
-  args.push("--permission-mode", permMode);
+  // Skip permissions so Claude doesn't hang waiting for interactive prompts.
+  // This is safe because forge controls which tools are allowed via --allowedTools.
+  args.push("--dangerously-skip-permissions");
 
   // System prompt
   if (options.systemPrompt) {
