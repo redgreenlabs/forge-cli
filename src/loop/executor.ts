@@ -78,48 +78,164 @@ export function parseClaudeResponse(raw: RawClaudeOutput): ClaudeResponse {
 
   // Try to parse as JSON
   let resultText = "";
+  let conversationItems: ConversationItem[] = [];
   try {
     const parsed = JSON.parse(raw.stdout);
 
     if (Array.isArray(parsed)) {
-      // CLI array format
-      const resultEntry = parsed.find(
-        (e: Record<string, unknown>) => e.type === "result"
-      );
+      conversationItems = parsed as ConversationItem[];
+      const resultEntry = conversationItems.find((e) => e.type === "result");
       resultText = (resultEntry?.result as string) ?? "";
     } else if (typeof parsed === "object" && parsed !== null) {
-      // Flat object format
       resultText = (parsed.result as string) ?? "";
     }
   } catch {
-    // Plain text fallback
     resultText = raw.stdout;
   }
 
-  // Extract FORGE_STATUS block
+  // Extract file paths from tool_use entries (Write, Edit, Read operations)
+  const filesModified = extractFilesFromToolUse(conversationItems);
+
+  // Extract test results from tool_use bash outputs
+  const testResults = extractTestResults(conversationItems, resultText);
+
+  // Extract FORGE_STATUS block (fallback for structured metadata)
   const statusBlock = extractStatusBlock(resultText);
 
   // Determine exit signal
   const exitSignal = statusBlock?.EXIT_SIGNAL === "true";
 
-  // Determine test status
-  const testsPass = statusBlock?.TESTS_STATUS
-    ? statusBlock.TESTS_STATUS === "PASSING"
-    : true;
-
-  // Extract files modified count
-  const filesModifiedCount = statusBlock?.FILES_MODIFIED
-    ? parseInt(statusBlock.FILES_MODIFIED, 10)
-    : 0;
+  // Determine test status from test results or status block
+  let testsPass = true;
+  if (testResults.total > 0) {
+    testsPass = testResults.failed === 0;
+  } else if (statusBlock?.TESTS_STATUS) {
+    testsPass = statusBlock.TESTS_STATUS === "PASSING";
+  }
 
   return {
     status: "success",
     exitSignal,
-    filesModified: Array.from({ length: filesModifiedCount }, (_, i) => `file-${i}`),
+    filesModified,
     testsPass,
-    testResults: { total: 0, passed: 0, failed: 0 },
+    testResults,
     error: null,
   };
+}
+
+/** Conversation item from Claude Code JSON output */
+interface ConversationItem {
+  type: string;
+  tool?: string;
+  content?: string | ConversationContent[];
+  result?: string;
+}
+
+interface ConversationContent {
+  type: string;
+  tool_use_id?: string;
+  name?: string;
+  input?: Record<string, unknown>;
+  text?: string;
+  content?: string;
+}
+
+/**
+ * Extract real file paths from Claude Code tool_use entries.
+ *
+ * Looks for Write, Edit, and NotebookEdit tool calls which contain
+ * file_path in their input. Returns unique paths.
+ */
+function extractFilesFromToolUse(items: ConversationItem[]): string[] {
+  const files = new Set<string>();
+
+  for (const item of items) {
+    // Handle items with content array (assistant messages with tool_use)
+    if (Array.isArray(item.content)) {
+      for (const block of item.content) {
+        if (block.type === "tool_use" && block.input) {
+          const filePath = block.input.file_path as string | undefined;
+          if (filePath) {
+            files.add(filePath);
+          }
+        }
+      }
+    }
+
+    // Handle tool_result items that reference file operations
+    if (item.type === "tool_result" && typeof item.content === "string") {
+      const fileMatch = item.content.match(/(?:wrote|edited|created)\s+(.+)/i);
+      if (fileMatch?.[1]) {
+        files.add(fileMatch[1].trim());
+      }
+    }
+  }
+
+  return [...files];
+}
+
+/**
+ * Extract test results from bash tool outputs.
+ *
+ * Looks for common test runner output patterns:
+ * - Vitest: "Tests  X passed (X)" or "X passed | X failed"
+ * - Jest: "Tests: X passed, X failed, X total"
+ * - pytest: "X passed, X failed"
+ * - Generic: "X passing", "X failing"
+ */
+function extractTestResults(
+  items: ConversationItem[],
+  resultText: string
+): { total: number; passed: number; failed: number } {
+  // Collect all text content from tool results and result text
+  const allText = [resultText];
+  for (const item of items) {
+    if (typeof item.content === "string") {
+      allText.push(item.content);
+    }
+    if (item.result) {
+      allText.push(item.result);
+    }
+  }
+
+  const combined = allText.join("\n");
+
+  // Vitest/Jest pattern: "Tests  42 passed (42)" or "Tests: 5 passed, 2 failed, 7 total"
+  const vitestMatch = combined.match(/Tests\s+(\d+)\s+passed\s+\((\d+)\)/);
+  if (vitestMatch) {
+    const passed = parseInt(vitestMatch[1]!, 10);
+    const total = parseInt(vitestMatch[2]!, 10);
+    return { total, passed, failed: total - passed };
+  }
+
+  const jestMatch = combined.match(/Tests:\s*(\d+)\s+passed,?\s*(\d+)\s+failed,?\s*(\d+)\s+total/);
+  if (jestMatch) {
+    return {
+      passed: parseInt(jestMatch[1]!, 10),
+      failed: parseInt(jestMatch[2]!, 10),
+      total: parseInt(jestMatch[3]!, 10),
+    };
+  }
+
+  // pytest pattern: "5 passed, 2 failed"
+  const pytestMatch = combined.match(/(\d+)\s+passed(?:,\s*(\d+)\s+failed)?/);
+  if (pytestMatch) {
+    const passed = parseInt(pytestMatch[1]!, 10);
+    const failed = pytestMatch[2] ? parseInt(pytestMatch[2], 10) : 0;
+    return { total: passed + failed, passed, failed };
+  }
+
+  // FORGE_STATUS fallback
+  const statusBlock = extractStatusBlock(resultText);
+  if (statusBlock?.TESTS_TOTAL) {
+    return {
+      total: parseInt(statusBlock.TESTS_TOTAL, 10),
+      passed: parseInt(statusBlock.TESTS_PASSED ?? "0", 10),
+      failed: parseInt(statusBlock.TESTS_FAILED ?? "0", 10),
+    };
+  }
+
+  return { total: 0, passed: 0, failed: 0 };
 }
 
 /** Extract key-value pairs from FORGE_STATUS block */

@@ -35,6 +35,7 @@ export interface ClaudeExecutor {
     systemPrompt: string;
     allowedTools: string[];
     timeout: number;
+    sessionId?: string;
   }) => Promise<ClaudeResponse>;
 }
 
@@ -56,6 +57,8 @@ export interface OrchestratorOptions {
   onDashboardUpdate: (state: DashboardState) => void;
   /** Project root directory for file operations and git commits */
   projectRoot?: string;
+  /** Claude session ID for continuity between iterations */
+  sessionId?: string;
 }
 
 /** State snapshot for TUI dashboard updates */
@@ -98,12 +101,14 @@ export class LoopOrchestrator {
   private _committedCount = 0;
   private _testFailures = 0;
   private _projectRoot: string;
+  private _sessionId?: string;
 
   constructor(options: OrchestratorOptions) {
     this._config = options.config;
     this._executor = options.executor;
     this._onDashboardUpdate = options.onDashboardUpdate;
     this._projectRoot = options.projectRoot ?? process.cwd();
+    this._sessionId = options.sessionId;
     this._startTime = Date.now();
 
     const handler: LoopEventHandler = {
@@ -244,8 +249,11 @@ export class LoopOrchestrator {
         this._qualityReport = pipelineResult.qualityReport;
       }
 
-      // Record handoff for next iteration
+      // Mark task complete and record handoff for next iteration
       if (pipelineResult.completed && currentTask) {
+        this.markTaskComplete(currentTask.id);
+        this.logAgent("system", "task-done", `Completed task: ${currentTask.title}`);
+
         this._handoffContext.add({
           from: agentRole,
           to: AgentRole.Implementer,
@@ -288,6 +296,7 @@ export class LoopOrchestrator {
     handoffPrompt: string
   ): PhaseExecutor {
     const timeout = this._config.timeoutMinutes * 60 * 1000;
+    const sessionId = this._sessionId;
     const taskContext = `Task: ${task.title}\nAcceptance criteria: ${(task as TaskNode & { acceptanceCriteria?: string[] }).acceptanceCriteria?.join(", ") ?? ""}`;
     const handoffSection = handoffPrompt ? `\n\n${handoffPrompt}` : "";
 
@@ -303,6 +312,7 @@ export class LoopOrchestrator {
           systemPrompt: testerPrompt,
           allowedTools: getAgentAllowedTools(AgentRole.Tester),
           timeout,
+          sessionId,
         });
 
         if (response.testResults) {
@@ -329,6 +339,7 @@ export class LoopOrchestrator {
           systemPrompt: implPrompt,
           allowedTools: getAgentAllowedTools(AgentRole.Implementer),
           timeout,
+          sessionId,
         });
 
         if (response.testResults) {
@@ -355,6 +366,7 @@ export class LoopOrchestrator {
           systemPrompt: implPrompt,
           allowedTools: getAgentAllowedTools(AgentRole.Implementer),
           timeout,
+          sessionId,
         });
 
         if (response.testResults) {

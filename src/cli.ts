@@ -261,6 +261,7 @@ program
       tasks: runCtx.tasks,
       projectRoot: cwd,
       forgeDir: runCtx.forgeDir,
+      sessionId: session.claudeSessionId ?? undefined,
       onDashboardUpdate: (dashState) => {
         if (options.tui !== false) {
           // Clear and re-render terminal dashboard

@@ -149,21 +149,65 @@ EXIT_SIGNAL: false
       expect(result.exitSignal).toBe(false);
     });
 
-    it("should extract files modified from status block", () => {
+    it("should extract file paths from tool_use entries", () => {
       const raw: RawClaudeOutput = {
-        stdout: JSON.stringify({
-          result: `---FORGE_STATUS---
-FILES_MODIFIED: 3
-EXIT_SIGNAL: false
----END_FORGE_STATUS---`,
-          exitCode: 0,
-        }),
+        stdout: JSON.stringify([
+          {
+            type: "assistant",
+            content: [
+              {
+                type: "tool_use",
+                name: "Write",
+                input: { file_path: "src/auth.ts", content: "export const auth = true;" },
+              },
+              {
+                type: "tool_use",
+                name: "Edit",
+                input: { file_path: "src/login.ts", old_string: "a", new_string: "b" },
+              },
+            ],
+          },
+          { type: "result", result: "Done" },
+        ]),
         stderr: "",
         exitCode: 0,
       };
 
       const result = parseClaudeResponse(raw);
-      expect(result.filesModified.length).toBe(3);
+      expect(result.filesModified).toContain("src/auth.ts");
+      expect(result.filesModified).toContain("src/login.ts");
+      expect(result.filesModified.length).toBe(2);
+    });
+
+    it("should deduplicate file paths", () => {
+      const raw: RawClaudeOutput = {
+        stdout: JSON.stringify([
+          {
+            type: "assistant",
+            content: [
+              { type: "tool_use", name: "Edit", input: { file_path: "src/app.ts" } },
+              { type: "tool_use", name: "Edit", input: { file_path: "src/app.ts" } },
+            ],
+          },
+          { type: "result", result: "Done" },
+        ]),
+        stderr: "",
+        exitCode: 0,
+      };
+
+      const result = parseClaudeResponse(raw);
+      expect(result.filesModified).toEqual(["src/app.ts"]);
+    });
+
+    it("should return empty files when no tool_use entries", () => {
+      const raw: RawClaudeOutput = {
+        stdout: JSON.stringify({ result: "Just text" }),
+        stderr: "",
+        exitCode: 0,
+      };
+
+      const result = parseClaudeResponse(raw);
+      expect(result.filesModified).toEqual([]);
     });
 
     it("should handle non-zero exit code as error", () => {
@@ -205,6 +249,65 @@ EXIT_SIGNAL: false
 
       const result = parseClaudeResponse(raw);
       expect(result.testsPass).toBe(false);
+    });
+
+    it("should extract vitest results from tool output", () => {
+      const raw: RawClaudeOutput = {
+        stdout: JSON.stringify([
+          {
+            type: "tool_result",
+            content: "Tests  42 passed (42)\nDuration  1.5s",
+          },
+          { type: "result", result: "All tests pass" },
+        ]),
+        stderr: "",
+        exitCode: 0,
+      };
+
+      const result = parseClaudeResponse(raw);
+      expect(result.testResults.total).toBe(42);
+      expect(result.testResults.passed).toBe(42);
+      expect(result.testResults.failed).toBe(0);
+      expect(result.testsPass).toBe(true);
+    });
+
+    it("should extract jest results from tool output", () => {
+      const raw: RawClaudeOutput = {
+        stdout: JSON.stringify([
+          {
+            type: "tool_result",
+            content: "Tests: 10 passed, 2 failed, 12 total",
+          },
+          { type: "result", result: "Some tests failed" },
+        ]),
+        stderr: "",
+        exitCode: 0,
+      };
+
+      const result = parseClaudeResponse(raw);
+      expect(result.testResults.total).toBe(12);
+      expect(result.testResults.passed).toBe(10);
+      expect(result.testResults.failed).toBe(2);
+      expect(result.testsPass).toBe(false);
+    });
+
+    it("should extract pytest results from tool output", () => {
+      const raw: RawClaudeOutput = {
+        stdout: JSON.stringify([
+          {
+            type: "tool_result",
+            content: "8 passed, 1 failed in 2.3s",
+          },
+          { type: "result", result: "Done" },
+        ]),
+        stderr: "",
+        exitCode: 0,
+      };
+
+      const result = parseClaudeResponse(raw);
+      expect(result.testResults.total).toBe(9);
+      expect(result.testResults.passed).toBe(8);
+      expect(result.testResults.failed).toBe(1);
     });
   });
 });

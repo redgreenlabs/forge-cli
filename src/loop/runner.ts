@@ -11,6 +11,7 @@ export interface LoopRunnerOptions {
   tasks: PrdTask[];
   projectRoot?: string;
   forgeDir?: string;
+  sessionId?: string;
   onDashboardUpdate?: (state: DashboardState) => void;
 }
 
@@ -43,6 +44,7 @@ export class LoopRunner {
       executor: options.executor,
       tasks: options.tasks,
       projectRoot: options.projectRoot,
+      sessionId: options.sessionId,
       onDashboardUpdate: options.onDashboardUpdate ?? (() => {}),
     });
 
