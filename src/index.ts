@@ -282,3 +282,10 @@ export {
   type DepAuditGateOptions,
   type PackageManager,
 } from "./gates/dep-audit-gate.js";
+
+// Structured Logging
+export {
+  createLogger,
+  moduleLogger,
+  type LoggerOptions,
+} from "./logging/logger.js";
