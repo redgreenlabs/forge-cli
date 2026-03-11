@@ -78,6 +78,23 @@ export {
   type SecretFinding,
 } from "./security/scanner.js";
 
+// Hook System
+export {
+  HookRegistry,
+  HookEvent,
+  type Hook,
+  type HookContext,
+  type HookError,
+} from "./loop/hooks.js";
+
+// SAST Scanner
+export {
+  scanForVulnerabilities,
+  VulnerabilityType,
+  Severity,
+  type VulnerabilityFinding,
+} from "./security/sast.js";
+
 // TDD Enforcement
 export {
   TddEnforcer,
