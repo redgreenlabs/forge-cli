@@ -3,20 +3,23 @@
 ## Quick Reference
 
 ```bash
-npm test              # Run all 437 tests
-npm run test:coverage # Run with coverage report (94%+ statements)
+npm test              # Run all ~508 tests across 41 suites
+npm run test:coverage # Run with coverage report
 npm run typecheck     # TypeScript strict mode check
 npm run build         # Build with tsup
+npm run test:smoke    # Integration smoke tests (heavy, run separately)
 ```
 
 ## Architecture
 
-Forge is a TypeScript ESM project using strict mode. 38 source modules across 38 test suites:
+Forge is a TypeScript ESM project using strict mode. 39 source modules across 41 test suites:
 
 ### Core Loop
 - `src/loop/engine.ts` — Loop state machine with 8 phases and stop conditions
 - `src/loop/circuit-breaker.ts` — Nygard circuit breaker (CLOSED/HALF_OPEN/OPEN)
 - `src/loop/orchestrator.ts` — Ties agents, TDD, gates, and loop together
+- `src/loop/pipeline.ts` — Iteration pipeline (Red-Green-Refactor + gates + commit)
+- `src/loop/phase-impl.ts` — Real phase executors (security scan, quality gates, git commit)
 - `src/loop/runner.ts` — High-level run with abort signal and error collection
 - `src/loop/executor.ts` — Claude Code CLI arg builder and response parser
 - `src/loop/session.ts` — Session persistence, expiry, and history
@@ -28,7 +31,7 @@ Forge is a TypeScript ESM project using strict mode. 38 source modules across 38
 - `src/config/loader.ts` — File + env var loading with deep merge
 
 ### Commands
-- `src/commands/init.ts` — Project scaffolding (detects Node/Python/Rust/Go)
+- `src/commands/init.ts` — Project scaffolding with auto-detected commands (Node/Python/Rust/Go)
 - `src/commands/import.ts` — PRD import (Markdown/JSON) with task extraction
 - `src/commands/run.ts` — Run context preparation (config + tasks + prompt)
 - `src/commands/interactive-prd.ts` — Guided PRD generation from answers
