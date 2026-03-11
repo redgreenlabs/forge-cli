@@ -33,6 +33,75 @@ program
   .option("-f, --force", "Overwrite existing .forge directory")
   .action(async (options) => {
     const cwd = process.cwd();
+
+    if (options.interactive) {
+      const { generatePrdFromAnswers, getTemplateDefaults, PrdTemplate } =
+        await import("./commands/interactive-prd.js");
+      const { createInterface } = await import("readline");
+
+      const rl = createInterface({ input: process.stdin, output: process.stdout });
+      const ask = (q: string): Promise<string> =>
+        new Promise((resolve) => rl.question(q, resolve));
+
+      console.log(chalk.bold.cyan("\nForge Interactive PRD Creator\n"));
+
+      const projectName = (await ask("Project name: ")).trim() || "my-project";
+      const vision = (await ask("Vision (one sentence): ")).trim() || "A new project";
+
+      console.log(chalk.gray("\nTemplates: web-app, cli-tool, library, api"));
+      const templateInput = (await ask("Template (or press enter to skip): ")).trim();
+
+      let defaults = { stack: "", features: [] as string[], constraints: [] as string[], nonFunctional: [] as string[] };
+      const templateValues: string[] = Object.values(PrdTemplate);
+      if (templateInput && templateValues.includes(templateInput)) {
+        defaults = getTemplateDefaults(templateInput as typeof PrdTemplate[keyof typeof PrdTemplate]);
+        console.log(chalk.green(`  Loaded ${templateInput} template defaults`));
+      }
+
+      const stackInput = (await ask(`Tech stack [${defaults.stack || "enter manually"}]: `)).trim();
+      const stack = stackInput || defaults.stack || "TypeScript";
+
+      console.log(chalk.gray("\nEnter features (one per line, empty line to finish):"));
+      const features = [...defaults.features];
+      let feat: string;
+      while ((feat = (await ask("  Feature: ")).trim()) !== "") {
+        features.push(feat);
+      }
+
+      rl.close();
+
+      const prd = generatePrdFromAnswers({
+        projectName,
+        vision,
+        stack,
+        features: features.length > 0 ? features : ["Core functionality"],
+        constraints: defaults.constraints,
+        nonFunctional: defaults.nonFunctional,
+      });
+
+      // Init project first, then write PRD
+      const initResult = await initProject(cwd, { projectName, force: options.force as boolean | undefined });
+      if (!initResult.success) {
+        console.error(chalk.red(`Error: ${initResult.error}`));
+        process.exit(1);
+      }
+
+      const { writeFileSync } = await import("fs");
+      const { resolve: pathResolve } = await import("path");
+      const prdPath = pathResolve(cwd, ".forge", "specs", "prd.md");
+      writeFileSync(prdPath, prd);
+
+      // Also import it as tasks
+      const { importPrd } = await import("./commands/import.js");
+      importPrd(prdPath, cwd);
+
+      console.log(chalk.green("\nProject initialized with interactive PRD!"));
+      console.log(`  PRD:   ${chalk.bold(".forge/specs/prd.md")}`);
+      console.log(`  Tasks: ${chalk.bold(".forge/tasks.md")}`);
+      console.log(`\nNext: ${chalk.cyan("forge run")}`);
+      return;
+    }
+
     console.log(chalk.cyan("Initializing Forge project..."));
 
     const result = await initProject(cwd, {

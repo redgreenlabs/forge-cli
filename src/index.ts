@@ -275,3 +275,10 @@ export {
   PrdTemplate,
   type InteractivePrdAnswers,
 } from "./commands/interactive-prd.js";
+
+// Dependency Audit Gate
+export {
+  createDepAuditGate,
+  type DepAuditGateOptions,
+  type PackageManager,
+} from "./gates/dep-audit-gate.js";

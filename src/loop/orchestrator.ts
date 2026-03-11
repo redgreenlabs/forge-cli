@@ -16,6 +16,9 @@ import { TaskGraph, type TaskNode } from "../prd/task-graph.js";
 import type { PrdTask } from "../prd/parser.js";
 import type { PipelineResult } from "../gates/quality-gates.js";
 import type { AgentLogEntry } from "../tui/renderer.js";
+import { HandoffContext } from "../agents/handoff.js";
+import { TeamComposer } from "../agents/team.js";
+import type { WarningPanelData } from "../tui/error-panel.js";
 
 /** Claude Code execution interface */
 export interface ClaudeExecutor {
@@ -52,6 +55,7 @@ export interface DashboardState {
   tddCycles: number;
   agentLog: AgentLogEntry[];
   qualityReport?: PipelineResult;
+  handoffEntries: number;
 }
 
 /**
@@ -79,6 +83,10 @@ export class LoopOrchestrator {
   private _executor: ClaudeExecutor;
   private _onDashboardUpdate: (state: DashboardState) => void;
   private _startTime: number;
+  private _handoffContext: HandoffContext;
+  private _teamComposer: TeamComposer;
+  private _committedCount = 0;
+  private _testFailures = 0;
 
   constructor(options: OrchestratorOptions) {
     this._config = options.config;
@@ -102,6 +110,8 @@ export class LoopOrchestrator {
     this.circuitBreaker = new CircuitBreaker(options.config.circuitBreaker);
     this.tddEnforcer = new TddEnforcer();
     this.taskGraph = new TaskGraph(options.tasks as TaskNode[]);
+    this._handoffContext = new HandoffContext();
+    this._teamComposer = TeamComposer.fromConfig(options.config.agents);
 
     this.engine.setTotalTasks(options.tasks.length);
   }
@@ -128,6 +138,34 @@ export class LoopOrchestrator {
 
   get elapsedMs(): number {
     return Date.now() - this._startTime;
+  }
+
+  /** Access the handoff context for inter-agent communication */
+  get handoffContext(): HandoffContext {
+    return this._handoffContext;
+  }
+
+  /** Get the team iteration pipeline */
+  get teamPipeline(): AgentRole[] {
+    return this._teamComposer.iterationPipeline();
+  }
+
+  /** Get count of commits made */
+  get committedCount(): number {
+    return this._committedCount;
+  }
+
+  /** Get error panel data for TUI display */
+  get errorPanelData(): WarningPanelData {
+    const cbStats = this.circuitBreakerStats;
+    return {
+      circuitBreakerState: this.circuitBreaker.state,
+      rateLimitRemaining: this._config.maxCallsPerHour - cbStats.totalIterations,
+      rateLimitTotal: this._config.maxCallsPerHour,
+      permissionDenials: 0,
+      buildFailures: 0,
+      testFailures: this._testFailures,
+    };
   }
 
   /** Select the best agent for a task description */
@@ -180,6 +218,11 @@ export class LoopOrchestrator {
         testsPass: response.testsPass,
       });
       this.engine.setCircuitBreakerState(this.circuitBreaker.state);
+
+      // Track test failures for error panel
+      if (response.testResults && response.testResults.failed > 0) {
+        this._testFailures = response.testResults.failed;
+      }
 
       // Update TDD enforcer
       if (response.testResults) {
@@ -241,6 +284,7 @@ export class LoopOrchestrator {
       tddCycles: this.tddEnforcer.completedCycles,
       agentLog: this._agentLog,
       qualityReport: this._qualityReport,
+      handoffEntries: this._handoffContext.entries.length,
     });
   }
 }

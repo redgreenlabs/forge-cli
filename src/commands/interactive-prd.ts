@@ -6,6 +6,67 @@ export enum PrdTemplate {
   Api = "api",
 }
 
+/** Template default values (stack, features, constraints, non-functional) */
+interface TemplateDefaults {
+  stack: string;
+  features: string[];
+  constraints: string[];
+  nonFunctional: string[];
+}
+
+const TEMPLATE_DEFAULTS: Record<PrdTemplate, TemplateDefaults> = {
+  [PrdTemplate.WebApp]: {
+    stack: "React, TypeScript, Vite, Tailwind CSS",
+    features: [
+      "User authentication and authorization",
+      "Responsive dashboard layout",
+      "Data management with CRUD operations",
+      "Search and filtering",
+    ],
+    constraints: ["Must support modern browsers (Chrome, Firefox, Safari, Edge)"],
+    nonFunctional: ["Page load time < 3s", "Lighthouse score > 90"],
+  },
+  [PrdTemplate.CliTool]: {
+    stack: "Node.js, TypeScript, Commander.js",
+    features: [
+      "Command-line argument parsing",
+      "Configuration file support",
+      "Interactive prompts",
+      "Colored output and progress indicators",
+    ],
+    constraints: ["Must run on Node.js 18+"],
+    nonFunctional: ["Startup time < 500ms", "Zero runtime errors"],
+  },
+  [PrdTemplate.Library]: {
+    stack: "TypeScript, tsup, Vitest",
+    features: [
+      "Core API with TypeScript types",
+      "Comprehensive test suite",
+      "API documentation",
+      "Tree-shakeable ESM exports",
+    ],
+    constraints: ["Must support ESM and CJS"],
+    nonFunctional: ["100% API documentation", "90%+ test coverage"],
+  },
+  [PrdTemplate.Api]: {
+    stack: "Node.js, TypeScript, Express/Fastify, REST API",
+    features: [
+      "RESTful endpoint design",
+      "Authentication and authorization",
+      "Input validation and error handling",
+      "Database integration",
+      "API documentation (OpenAPI/Swagger)",
+    ],
+    constraints: ["Must follow REST conventions"],
+    nonFunctional: ["Response time < 200ms", "99.9% uptime"],
+  },
+};
+
+/** Get default values for a project template */
+export function getTemplateDefaults(template: PrdTemplate): TemplateDefaults {
+  return { ...TEMPLATE_DEFAULTS[template] };
+}
+
 /** Answers collected from the interactive PRD creation flow */
 export interface InteractivePrdAnswers {
   projectName: string;
