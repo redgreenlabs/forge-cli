@@ -110,12 +110,18 @@ Forge uses `.forge/forge.config.json` for project-level settings:
 ```
 src/
 ├── agents/          # Multi-agent role system
-│   └── roles.ts     # 6 agent definitions with prompts and tool permissions
+│   ├── roles.ts     # 6 agent definitions with prompts and tool permissions
+│   ├── handoff.ts   # Inter-agent communication protocol
+│   ├── team.ts      # Team composition and pipeline ordering
+│   └── context-file.ts # Persistent shared context
 ├── commands/        # CLI command implementations
 │   ├── init.ts      # Project scaffolding
-│   └── import.ts    # PRD import
+│   ├── import.ts    # PRD import
+│   ├── run.ts       # Run context preparation
+│   └── interactive-prd.ts # Guided PRD generation
 ├── commits/         # Conventional commit management
-│   └── classifier.ts # Auto-classification and validation
+│   ├── classifier.ts # Auto-classification and validation
+│   └── orchestrator.ts # TDD phase-based commit planning
 ├── config/          # Configuration management
 │   ├── schema.ts    # Zod-validated config schema
 │   └── loader.ts    # File + env var config loading
@@ -139,12 +145,14 @@ src/
 │   └── task-graph.ts # DAG with topological sort
 ├── security/        # Security scanning
 │   ├── scanner.ts   # Secret detection
-│   └── sast.ts      # SAST vulnerability scanner
+│   ├── sast.ts      # SAST vulnerability scanner
+│   └── dep-audit.ts # Dependency audit parsers
 ├── tdd/             # TDD enforcement
 │   └── enforcer.ts  # Red-Green-Refactor tracking
 ├── tui/             # Terminal UI
 │   ├── renderer.ts  # Static dashboard panels
-│   └── live-dashboard.tsx # Ink React live TUI
+│   ├── live-dashboard.tsx # Ink React live TUI
+│   └── error-panel.ts # Error/warning status panel
 ├── cli.ts           # CLI entry point (6 commands)
 └── index.ts         # Public API exports
 ```
@@ -153,17 +161,17 @@ src/
 
 ```bash
 npm install          # Install dependencies
-npm test             # Run 314 tests
-npm run test:coverage # Run with coverage (93%+ statements)
+npm test             # Run 394 tests
+npm run test:coverage # Run with coverage (94%+ statements)
 npm run typecheck    # TypeScript strict mode check
 npm run build        # Build with tsup
 ```
 
 ## Quality Metrics
 
-- **314 tests** across 25 test suites
-- **93.8%** statement coverage
-- **85.8%** branch coverage
+- **394 tests** across 32 test suites
+- **94.5%** statement coverage
+- **86.0%** branch coverage
 - **TypeScript strict mode** with no `any` types
 - **Conventional commits** throughout history
 - **Zero runtime dependencies** beyond chalk, commander, ink, pino, zod
