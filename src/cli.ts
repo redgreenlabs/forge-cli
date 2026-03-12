@@ -230,15 +230,6 @@ program
       return;
     }
 
-    console.log(
-      chalk.bold.cyan(
-        `\nStarting Forge loop (max ${effectiveConfig.maxIterations} iterations)...`
-      )
-    );
-    console.log(
-      chalk.gray("  Press Ctrl+C to stop gracefully.\n")
-    );
-
     // Load tasks
     const { prepareRunContext } = await import("./commands/run.js");
     const runCtx = prepareRunContext(cwd);
@@ -250,13 +241,54 @@ program
       return;
     }
 
-    console.log(
-      chalk.gray(`  Loaded ${runCtx.tasks.length} tasks from PRD.`)
-    );
+    const useTui = options.tui !== false && !options.verbose;
+
+    if (!useTui) {
+      console.log(
+        chalk.bold.cyan(
+          `\nStarting Forge loop (max ${effectiveConfig.maxIterations} iterations)...`
+        )
+      );
+      console.log(chalk.gray("  Press Ctrl+C to stop gracefully.\n"));
+      console.log(
+        chalk.gray(`  Loaded ${runCtx.tasks.length} tasks from PRD.`)
+      );
+    }
 
     // Create executor
     const { ClaudeCodeExecutor } = await import("./loop/executor.js");
     const executor = new ClaudeCodeExecutor("claude", !!options.verbose, cwd);
+
+    // Start live TUI dashboard if enabled
+    let inkUpdater: ((state: import("./loop/orchestrator.js").DashboardState) => void) | null = null;
+    let inkCleanup: (() => void) | null = null;
+
+    if (useTui) {
+      const { startLiveDashboard } = await import("./tui/live-dashboard.js");
+      const { CircuitBreakerState } = await import("./loop/circuit-breaker.js");
+      const initialDashState: import("./loop/orchestrator.js").DashboardState = {
+        loop: {
+          iteration: 0,
+          phase: LoopPhase.Idle,
+          running: false,
+          tasksCompleted: 0,
+          totalTasks: runCtx.tasks.length,
+          filesModifiedThisIteration: 0,
+          completedTaskIds: new Set(),
+          circuitBreakerState: CircuitBreakerState.Closed,
+          startedAt: Date.now(),
+          lastIterationAt: null,
+        },
+        tddPhase: TddPhase.Red,
+        tddCycles: 0,
+        agentLog: [],
+        handoffEntries: 0,
+        commitCount: 0,
+      };
+      const dash = startLiveDashboard(initialDashState);
+      inkUpdater = dash.updater;
+      inkCleanup = dash.cleanup;
+    }
 
     // Create runner
     const { LoopRunner } = await import("./loop/runner.js");
@@ -269,18 +301,11 @@ program
       sessionId: session.claudeSessionId ?? undefined,
       resume: options.resume as boolean | undefined,
       onDashboardUpdate: (dashState) => {
-        if (options.tui !== false) {
-          // Clear and re-render terminal dashboard
-          process.stdout.write("\x1B[2J\x1B[H");
-          console.log(renderDashboard({
-            state: dashState.loop,
-            tddPhase: dashState.tddPhase,
-            tddCycles: dashState.tddCycles,
-            agentLog: dashState.agentLog,
-            qualityGates: dashState.qualityReport,
-            currentTask: dashState.currentTask,
-            commitCount: dashState.commitCount,
-          }));
+        if (inkUpdater) {
+          inkUpdater(dashState);
+        } else if (!useTui) {
+          // --no-tui or --verbose: static chalk output
+          // (verbose mode logs its own output, no need for full dashboard rerender)
         }
       },
     });
@@ -296,6 +321,12 @@ program
 
     try {
       const result = await runner.run(controller.signal);
+
+      // Clean up Ink dashboard before printing summary
+      if (inkCleanup) {
+        inkCleanup();
+        inkCleanup = null;
+      }
 
       // Update session
       session.recordIteration(result.iterations);
@@ -320,6 +351,8 @@ program
         }
       }
     } finally {
+      // Safety net: unmount Ink if still alive
+      if (inkCleanup) inkCleanup();
       process.removeListener("SIGINT", onSignal);
       process.removeListener("SIGTERM", onSignal);
     }

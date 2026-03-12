@@ -10,11 +10,6 @@ import type { DashboardState } from "../loop/orchestrator.js";
 import type { PipelineResult } from "../gates/quality-gates.js";
 import type { AgentLogEntry } from "../tui/renderer.js";
 
-/** Props for the live dashboard component */
-interface DashboardProps {
-  initialState: DashboardState;
-}
-
 const PHASE_COLORS: Record<LoopPhase, string> = {
   [LoopPhase.Idle]: "gray",
   [LoopPhase.Planning]: "cyan",
@@ -39,6 +34,13 @@ const CB_DISPLAY: Record<CircuitBreakerState, { color: string; label: string }> 
   [CircuitBreakerState.Open]: { color: "red", label: "OPEN" },
 };
 
+function formatElapsed(ms: number): string {
+  const totalSec = Math.floor(ms / 1000);
+  const min = Math.floor(totalSec / 60);
+  const sec = totalSec % 60;
+  return `${String(min).padStart(2, "0")}:${String(sec).padStart(2, "0")}`;
+}
+
 function ProgressBar({ percent, width = 20 }: { percent: number; width?: number }) {
   const filled = Math.round((percent / 100) * width);
   const empty = width - filled;
@@ -51,7 +53,16 @@ function ProgressBar({ percent, width = 20 }: { percent: number; width?: number 
   );
 }
 
-function Header({ state }: { state: LoopState }) {
+function Header({ state, startedAt }: { state: LoopState; startedAt: number }) {
+  const [elapsed, setElapsed] = useState(Date.now() - startedAt);
+
+  useEffect(() => {
+    const interval = setInterval(() => {
+      setElapsed(Date.now() - startedAt);
+    }, 1000);
+    return () => clearInterval(interval);
+  }, [startedAt]);
+
   const phaseColor = PHASE_COLORS[state.phase];
   const progress =
     state.totalTasks > 0
@@ -68,11 +79,15 @@ function Header({ state }: { state: LoopState }) {
       <Box gap={2} marginTop={1}>
         <Text>
           <Text bold>Iteration:</Text>{" "}
-          <Text color="white">{String(state.iteration).padStart(3)}</Text>
+          <Text color="white">{String(state.iteration).padStart(2)}</Text>
         </Text>
         <Text>
           <Text bold>Phase:</Text>{" "}
           <Text color={phaseColor}>{state.phase.toUpperCase()}</Text>
+        </Text>
+        <Text>
+          <Text bold>Elapsed:</Text>{" "}
+          <Text color="gray">{formatElapsed(elapsed)}</Text>
         </Text>
       </Box>
       <Box gap={1}>
@@ -86,16 +101,35 @@ function Header({ state }: { state: LoopState }) {
   );
 }
 
-function StatusRow({ state, tddPhase, tddCycles }: { state: LoopState; tddPhase: TddPhase; tddCycles: number }) {
+function CurrentTask({ name }: { name?: string }) {
+  if (!name) return null;
+  const display = name.length > 50 ? name.slice(0, 47) + "..." : name;
+  return (
+    <Box marginBottom={1}>
+      <Text>
+        {"  "}<Text bold>Task:</Text>{" "}
+        <Text color="white">{display}</Text>
+      </Text>
+    </Box>
+  );
+}
+
+function StatusRow({
+  state,
+  tddPhase,
+  tddCycles,
+  commitCount,
+}: {
+  state: LoopState;
+  tddPhase: TddPhase;
+  tddCycles: number;
+  commitCount: number;
+}) {
   const cb = CB_DISPLAY[state.circuitBreakerState];
   const tdd = TDD_DISPLAY[tddPhase];
 
   return (
     <Box gap={2} marginBottom={1}>
-      <Text>
-        <Text bold>Circuit:</Text>{" "}
-        <Text color={cb.color}>{cb.label}</Text>
-      </Text>
       <Text>
         <Text bold>TDD:</Text>{" "}
         <Text color={tdd.color}>● {tdd.label}</Text>
@@ -104,7 +138,15 @@ function StatusRow({ state, tddPhase, tddCycles }: { state: LoopState; tddPhase:
         <Text bold>Cycles:</Text> {tddCycles}
       </Text>
       <Text>
+        <Text bold>Commits:</Text>{" "}
+        <Text color={commitCount > 0 ? "green" : "gray"}>{commitCount}</Text>
+      </Text>
+      <Text>
         <Text bold>Files:</Text> {state.filesModifiedThisIteration}
+      </Text>
+      <Text>
+        <Text bold>Circuit:</Text>{" "}
+        <Text color={cb.color}>{cb.label}</Text>
       </Text>
     </Box>
   );
@@ -164,7 +206,7 @@ function AgentLog({ entries }: { entries: AgentLogEntry[] }) {
     <Box flexDirection="column">
       <Text bold>Agent Activity:</Text>
       {recent.length === 0 ? (
-        <Text color="gray">  No activity yet</Text>
+        <Text color="gray">  Waiting for first phase...</Text>
       ) : (
         recent.map((entry, i) => (
           <Text key={i}>
@@ -188,33 +230,41 @@ function AgentLog({ entries }: { entries: AgentLogEntry[] }) {
  * Live Ink-based TUI dashboard component.
  *
  * Renders a real-time updating terminal UI with:
- * - Loop iteration and phase
- * - Progress bar
- * - TDD phase indicator
- * - Circuit breaker status
+ * - Loop iteration, phase, and elapsed time
+ * - Current task name
+ * - Progress bar with task counts
+ * - TDD phase indicator with color
+ * - Commit count and circuit breaker status
  * - Quality gate results
- * - Agent activity log
+ * - Agent activity log (last 8 entries)
+ * - Animated spinner while running
  */
-function Dashboard({ initialState }: DashboardProps) {
+function Dashboard({ state, startedAt }: { state: DashboardState; startedAt: number }) {
   return (
     <Box flexDirection="column" paddingX={1}>
-      <Header state={initialState.loop} />
+      <Header state={state.loop} startedAt={startedAt} />
+      <CurrentTask name={state.currentTask} />
       <StatusRow
-        state={initialState.loop}
-        tddPhase={initialState.tddPhase}
-        tddCycles={initialState.tddCycles}
+        state={state.loop}
+        tddPhase={state.tddPhase}
+        tddCycles={state.tddCycles}
+        commitCount={state.commitCount}
       />
-      <QualityGatesPanel result={initialState.qualityReport} />
-      <AgentLog entries={initialState.agentLog} />
+      <QualityGatesPanel result={state.qualityReport} />
+      <AgentLog entries={state.agentLog} />
       <Box marginTop={1}>
         <Text color="gray">{"─".repeat(50)}</Text>
       </Box>
-      {initialState.loop.phase !== LoopPhase.Idle && (
+      {state.loop.phase !== LoopPhase.Idle ? (
         <Box>
           <Text color="green">
             <Spinner type="dots" />
           </Text>
-          <Text color="gray"> Running...</Text>
+          <Text color="gray"> Claude is working...</Text>
+        </Box>
+      ) : (
+        <Box>
+          <Text color="gray">  Idle</Text>
         </Box>
       )}
     </Box>
@@ -234,6 +284,7 @@ export function startLiveDashboard(
   initialState: DashboardState
 ): { updater: DashboardUpdater; cleanup: () => void } {
   let setExternalState: ((s: DashboardState) => void) | null = null;
+  const startedAt = Date.now();
 
   function LiveWrapper() {
     const [dashState, setDashState] = useState(initialState);
@@ -245,7 +296,7 @@ export function startLiveDashboard(
       };
     }, []);
 
-    return <Dashboard initialState={dashState} />;
+    return <Dashboard state={dashState} startedAt={startedAt} />;
   }
 
   const { unmount, clear } = render(<LiveWrapper />);
