@@ -322,7 +322,11 @@ export function startLiveDashboard(
     return <Dashboard state={dashState} startedAt={startedAt} />;
   }
 
-  const { unmount, clear } = render(<LiveWrapper />, { fullScreen: true });
+  // Enter alternate screen buffer (like vim/htop)
+  process.stdout.write("\x1b[?1049h");
+  process.stdout.write("\x1b[H"); // Move cursor to top-left
+
+  const { unmount, clear } = render(<LiveWrapper />);
 
   return {
     updater: (state: DashboardState) => {
@@ -331,6 +335,8 @@ export function startLiveDashboard(
     cleanup: () => {
       clear();
       unmount();
+      // Leave alternate screen buffer — restores original terminal content
+      process.stdout.write("\x1b[?1049l");
     },
   };
 }

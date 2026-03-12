@@ -1,3 +1,6 @@
+import { existsSync } from "fs";
+import { join } from "path";
+import { execSync } from "child_process";
 import { QualityGateSeverity } from "../config/schema.js";
 import type { QualityGateDefinition, GateCheckResult } from "./quality-gates.js";
 
@@ -14,6 +17,8 @@ export interface BuiltinGateOptions {
   projectRoot: string;
   testCommand: string;
   lintCommand: string;
+  /** Workspace type to determine which audit tool to use */
+  workspaceType?: "node" | "python" | "rust" | "go" | "other";
 }
 
 /**
@@ -116,9 +121,13 @@ export function createBuiltinGates(
       description: "Scan for security vulnerabilities",
       severity: QualityGateSeverity.Block,
       check: async () => {
+        const auditCmd = getAuditCommand(options.workspaceType, options.projectRoot);
+        if (!auditCmd) {
+          return { passed: true, message: "No audit tool for this workspace type" };
+        }
         try {
           const { execSync } = await import("child_process");
-          execSync("npm audit --audit-level=high", {
+          execSync(auditCmd, {
             cwd: options.projectRoot,
             stdio: "pipe",
             timeout: 60_000,
@@ -182,4 +191,35 @@ export function createBuiltinGates(
       },
     },
   ];
+}
+
+/** Pick the right audit command based on workspace type */
+function getAuditCommand(
+  wsType: string | undefined,
+  projectRoot: string
+): string | null {
+  switch (wsType) {
+    case "node":
+      return "npm audit --audit-level=high";
+    case "python": {
+      // pip-audit is optional — skip if not installed
+      try {
+        execSync("pip-audit --version", { cwd: projectRoot, stdio: "pipe" });
+        return "pip-audit";
+      } catch {
+        return null;
+      }
+    }
+    case "rust":
+      return "cargo audit";
+    case "go":
+      return "govulncheck ./...";
+    default: {
+      // Fallback: detect from project files
+      if (existsSync(join(projectRoot, "package.json"))) {
+        return "npm audit --audit-level=high";
+      }
+      return null;
+    }
+  }
 }

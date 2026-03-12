@@ -445,6 +445,7 @@ export class LoopOrchestrator {
               projectRoot: this._projectRoot,
               testCommand: ws.test,
               lintCommand: ws.lint,
+              workspaceType: ws.type,
             });
             for (const gate of builtins) {
               // Prefix gate name with workspace for clarity
@@ -510,8 +511,8 @@ export class LoopOrchestrator {
    */
   private getAffectedWorkspaces(
     filesModified: string[],
-    workspaces: { name: string; path: string; test: string; lint: string }[]
-  ): { name: string; path: string; test: string; lint: string }[] {
+    workspaces: NonNullable<ForgeConfig["workspaces"]>
+  ): NonNullable<ForgeConfig["workspaces"]> {
     if (filesModified.length === 0) return workspaces;
 
     const affected = new Set<string>();
