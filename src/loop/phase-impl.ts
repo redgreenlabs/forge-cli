@@ -99,23 +99,31 @@ export async function commitPhase(
   try {
     const { execSync } = await import("child_process");
 
-    // Stage all changes — files list may contain relative or absolute paths,
-    // and Claude may have created/modified files not in our list.
-    // Using git add -A in projectRoot captures everything the agent touched.
-    execSync("git add -A", {
-      cwd: projectRoot,
-      stdio: "pipe",
-    });
-
-    // Check if there's anything staged to commit
-    const status = execSync("git diff --cached --name-only", {
+    // Get all changed/untracked files via git status, excluding forge internals
+    const statusOutput = execSync("git status --porcelain -u", {
       cwd: projectRoot,
       encoding: "utf-8",
       stdio: ["pipe", "pipe", "pipe"],
-    }).trim();
+    });
 
-    if (!status) {
-      return { committed: false, message: "Nothing staged to commit" };
+    const changedFiles = statusOutput
+      .split("\n")
+      .filter((line) => line.trim().length > 0)
+      .map((line) => line.slice(3).trim())
+      .filter((f) => f.length > 0)
+      // Exclude forge internals and common non-source paths
+      .filter((f) => !f.startsWith(".forge/") && !f.startsWith("node_modules/"));
+
+    if (changedFiles.length === 0) {
+      return { committed: false, message: "No source files changed" };
+    }
+
+    // Stage only source files (not .forge/ or node_modules/)
+    for (const file of changedFiles) {
+      execSync(`git add -- ${escapeShellArg(file)}`, {
+        cwd: projectRoot,
+        stdio: "pipe",
+      });
     }
 
     // Commit with the planned message

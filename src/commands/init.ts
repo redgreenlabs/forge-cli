@@ -2,6 +2,8 @@ import {
   mkdirSync,
   writeFileSync,
   existsSync,
+  readFileSync,
+  appendFileSync,
 } from "fs";
 import { join } from "path";
 import { defaultConfig } from "../config/schema.js";
@@ -188,6 +190,27 @@ export async function initProject(
     generateInitialAdr(projectName)
   );
   createdFiles.push("docs/adr/0001-initial-architecture.md");
+
+  // Append forge-specific entries to .gitignore
+  const gitignorePath = join(projectRoot, ".gitignore");
+  const forgeIgnore = [
+    "",
+    "# Forge CLI (ephemeral state)",
+    ".forge/context.json",
+    ".forge/session.json",
+    ".forge/session-history.json",
+    ".forge/logs/",
+    "",
+  ].join("\n");
+
+  if (existsSync(gitignorePath)) {
+    const existing = readFileSync(gitignorePath, "utf-8");
+    if (!existing.includes(".forge/context.json")) {
+      appendFileSync(gitignorePath, forgeIgnore);
+    }
+  } else {
+    writeFileSync(gitignorePath, forgeIgnore.trimStart());
+  }
 
   return {
     success: true,

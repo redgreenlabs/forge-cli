@@ -19,6 +19,16 @@ git init
 git config user.email "test@forge.dev"
 git config user.name "Forge Test"
 
+# Gitignore
+cat > .gitignore << 'GITIGNORE'
+node_modules/
+dist/
+.forge/context.json
+.forge/session.json
+.forge/session-history.json
+.forge/logs/
+GITIGNORE
+
 # Create a minimal Node/TypeScript project
 cat > package.json << 'PKGJSON'
 {

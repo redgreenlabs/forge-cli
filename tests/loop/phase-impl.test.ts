@@ -312,6 +312,6 @@ describe("commitPhase", () => {
     );
 
     expect(result.committed).toBe(false);
-    expect(result.message).toBe("Nothing staged to commit");
+    expect(result.message).toBe("No source files changed");
   });
 });
