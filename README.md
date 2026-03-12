@@ -20,7 +20,7 @@ You describe what to build. Forge builds it — test-first, secure, and document
 
 ```bash
 # Install
-npm install -g forge-cli
+npm install -g @redgreen-labs/forge-cli
 
 # Initialize a project
 forge init --name my-project
