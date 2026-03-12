@@ -18,6 +18,8 @@ export interface LoopRunnerOptions {
   /** Resume from previous run, skipping completed tasks */
   resume?: boolean;
   onDashboardUpdate?: (state: DashboardState) => void;
+  /** Extra context to prepend to agent system prompts (e.g. spec-kit context) */
+  extraSystemContext?: string;
 }
 
 /** Result of a complete loop run */
@@ -55,6 +57,7 @@ export class LoopRunner {
       projectRoot: options.projectRoot,
       sessionId: options.sessionId,
       onDashboardUpdate: options.onDashboardUpdate ?? (() => {}),
+      extraSystemContext: options.extraSystemContext,
     });
 
     this.resume = options.resume ?? false;
@@ -212,11 +215,25 @@ export class LoopRunner {
       if (existsSync(tasksMdPath)) {
         let content = readFileSync(tasksMdPath, "utf-8");
         for (const id of completedIds) {
-          // Match: - [ ] [task-id] ...
-          const pattern = new RegExp(`^(- )\\[ \\]( \\[${escapeRegex(id)}\\])`, "gm");
-          content = content.replace(pattern, "$1[x]$2");
+          // Match forge format: - [ ] [task-id] ...
+          const forgePattern = new RegExp(`^(- )\\[ \\]( \\[${escapeRegex(id)}\\])`, "gm");
+          content = content.replace(forgePattern, "$1[x]$2");
+          // Match spec-kit format: - [ ] T001 ...
+          const specKitPattern = new RegExp(`^(- )\\[ \\]( ${escapeRegex(id)} )`, "gm");
+          content = content.replace(specKitPattern, "$1[x]$2");
         }
         writeFileSync(tasksMdPath, content);
+      }
+
+      // Also update specs/tasks.md if it exists (spec-kit format)
+      const specsTasksPath = join(this.forgeDir, "..", "specs", "tasks.md");
+      if (existsSync(specsTasksPath)) {
+        let content = readFileSync(specsTasksPath, "utf-8");
+        for (const id of completedIds) {
+          const pattern = new RegExp(`^(- )\\[ \\]( ${escapeRegex(id)} )`, "gm");
+          content = content.replace(pattern, "$1[x]$2");
+        }
+        writeFileSync(specsTasksPath, content);
       }
     } catch {
       // Non-fatal — status display may be stale

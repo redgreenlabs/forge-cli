@@ -59,6 +59,8 @@ export interface OrchestratorOptions {
   projectRoot?: string;
   /** Claude session ID for continuity between iterations */
   sessionId?: string;
+  /** Extra context to prepend to agent system prompts (e.g. spec-kit context) */
+  extraSystemContext?: string;
 }
 
 /** State snapshot for TUI dashboard updates */
@@ -107,10 +109,12 @@ export class LoopOrchestrator {
   private _projectRoot: string;
   private _sessionId?: string;
   private _currentTaskName?: string;
+  private _extraSystemContext: string;
 
   constructor(options: OrchestratorOptions) {
     this._config = options.config;
     this._executor = options.executor;
+    this._extraSystemContext = options.extraSystemContext ?? "";
     this._onDashboardUpdate = options.onDashboardUpdate;
     this._projectRoot = options.projectRoot ?? process.cwd();
     this._sessionId = options.sessionId;
@@ -316,7 +320,9 @@ export class LoopOrchestrator {
     return {
       executeRedPhase: async (): Promise<PhaseResult> => {
         this.logAgent(AgentRole.Tester, "red-phase", "Writing failing test");
-        const testerPrompt = getAgentPrompt(AgentRole.Tester);
+        const testerPrompt = this._extraSystemContext
+          ? `${this._extraSystemContext}\n\n${getAgentPrompt(AgentRole.Tester)}`
+          : getAgentPrompt(AgentRole.Tester);
         const response = await this._executor.execute({
           prompt: `[TDD RED PHASE] Write a failing test for:\n${taskContext}${handoffSection}\n\nWrite ONLY the test. Do NOT implement the feature yet.`,
           systemPrompt: testerPrompt,
@@ -343,7 +349,9 @@ export class LoopOrchestrator {
 
       executeGreenPhase: async (): Promise<PhaseResult> => {
         this.logAgent(AgentRole.Implementer, "green-phase", "Implementing to pass tests");
-        const implPrompt = getAgentPrompt(AgentRole.Implementer);
+        const implPrompt = this._extraSystemContext
+          ? `${this._extraSystemContext}\n\n${getAgentPrompt(AgentRole.Implementer)}`
+          : getAgentPrompt(AgentRole.Implementer);
         const response = await this._executor.execute({
           prompt: `[TDD GREEN PHASE] Implement the MINIMAL code to make the failing test pass:\n${taskContext}${handoffSection}\n\nWrite only enough code to pass the test. Keep it simple.`,
           systemPrompt: implPrompt,
@@ -370,10 +378,12 @@ export class LoopOrchestrator {
 
       executeRefactorPhase: async (): Promise<PhaseResult> => {
         this.logAgent(AgentRole.Implementer, "refactor-phase", "Refactoring");
-        const implPrompt = getAgentPrompt(AgentRole.Implementer);
+        const refactorPrompt = this._extraSystemContext
+          ? `${this._extraSystemContext}\n\n${getAgentPrompt(AgentRole.Implementer)}`
+          : getAgentPrompt(AgentRole.Implementer);
         const response = await this._executor.execute({
           prompt: `[TDD REFACTOR PHASE] Improve code quality without changing behavior:\n${taskContext}\n\nAll tests MUST still pass after refactoring.`,
-          systemPrompt: implPrompt,
+          systemPrompt: refactorPrompt,
           allowedTools: getAgentAllowedTools(AgentRole.Implementer),
           timeout,
           sessionId,

@@ -250,8 +250,9 @@ program
         )
       );
       console.log(chalk.gray("  Press Ctrl+C to stop gracefully.\n"));
+      const taskSource = runCtx.specKitContext ? "spec-kit" : "PRD";
       console.log(
-        chalk.gray(`  Loaded ${runCtx.tasks.length} tasks from PRD.`)
+        chalk.gray(`  Loaded ${runCtx.tasks.length} tasks from ${taskSource}.`)
       );
     }
 
@@ -300,6 +301,7 @@ program
       forgeDir: runCtx.forgeDir,
       sessionId: session.claudeSessionId ?? undefined,
       resume: options.resume as boolean | undefined,
+      extraSystemContext: runCtx.specKitContext,
       onDashboardUpdate: (dashState) => {
         if (inkUpdater) {
           inkUpdater(dashState);
