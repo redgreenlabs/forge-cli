@@ -142,6 +142,13 @@ export class LoopOrchestrator {
     this._teamComposer = TeamComposer.fromConfig(options.config.agents);
 
     this.engine.setTotalTasks(options.tasks.length);
+
+    // Pre-populate completed tasks from scan results
+    for (const task of options.tasks) {
+      if (task.status === "done") {
+        this.engine.recordTaskCompleted(task.id);
+      }
+    }
   }
 
   get state(): LoopState {
