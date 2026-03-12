@@ -420,13 +420,33 @@ export class LoopOrchestrator {
         const phaseImpl = await import("./phase-impl.js");
         const gatePlugin = await import("../gates/plugin.js");
         const registry = new gatePlugin.GatePluginRegistry();
-        const builtins = gatePlugin.createBuiltinGates({
-          projectRoot: this._projectRoot,
-          testCommand: this._config.commands.test,
-          lintCommand: this._config.commands.lint,
-        });
-        for (const gate of builtins) {
-          registry.register(gate);
+
+        // Workspace-aware: run tests/lint per affected workspace
+        const workspaces = this._config.workspaces;
+        if (workspaces && workspaces.length > 0) {
+          const affected = this.getAffectedWorkspaces(allFilesModified, workspaces);
+          for (const ws of affected) {
+            this.logAgent("system", "gates", `Running gates for workspace: ${ws.name}`);
+            const builtins = gatePlugin.createBuiltinGates({
+              projectRoot: this._projectRoot,
+              testCommand: ws.test,
+              lintCommand: ws.lint,
+            });
+            for (const gate of builtins) {
+              // Prefix gate name with workspace for clarity
+              gate.name = `${ws.name}:${gate.name}`;
+              registry.register(gate);
+            }
+          }
+        } else {
+          const builtins = gatePlugin.createBuiltinGates({
+            projectRoot: this._projectRoot,
+            testCommand: this._config.commands.test,
+            lintCommand: this._config.commands.lint,
+          });
+          for (const gate of builtins) {
+            registry.register(gate);
+          }
         }
         return phaseImpl.runQualityGates(registry.toGateDefinitions());
       },
@@ -465,6 +485,39 @@ export class LoopOrchestrator {
   markTaskComplete(taskId: string): void {
     this.taskGraph.markComplete(taskId);
     this.engine.recordTaskCompleted(taskId);
+  }
+
+  /**
+   * Determine which workspaces are affected by the modified files.
+   *
+   * A workspace is affected if any modified file path starts with
+   * the workspace's path. Root workspace (path ".") is affected
+   * by files that don't match any other workspace.
+   */
+  private getAffectedWorkspaces(
+    filesModified: string[],
+    workspaces: { name: string; path: string; test: string; lint: string }[]
+  ): { name: string; path: string; test: string; lint: string }[] {
+    if (filesModified.length === 0) return workspaces;
+
+    const affected = new Set<string>();
+    const nonRootWorkspaces = workspaces.filter((ws) => ws.path !== ".");
+    const rootWorkspace = workspaces.find((ws) => ws.path === ".");
+
+    for (const file of filesModified) {
+      let matched = false;
+      for (const ws of nonRootWorkspaces) {
+        if (file.startsWith(ws.path + "/") || file === ws.path) {
+          affected.add(ws.name);
+          matched = true;
+        }
+      }
+      if (!matched && rootWorkspace) {
+        affected.add(rootWorkspace.name);
+      }
+    }
+
+    return workspaces.filter((ws) => affected.has(ws.name));
   }
 
   private logAgent(agent: string, action: string, detail: string): void {

@@ -31,6 +31,8 @@ program
   .option("-i, --interactive", "Guide through PRD creation interactively")
   .option("-n, --name <name>", "Project name")
   .option("-f, --force", "Overwrite existing .forge directory")
+  .option("--scan", "Scan repo to auto-detect workspaces (uses Claude Code)")
+  .option("-v, --verbose", "Show detailed scan output")
   .action(async (options) => {
     const cwd = process.cwd();
 
@@ -120,6 +122,39 @@ program
     for (const file of result.createdFiles) {
       console.log(`    ${chalk.gray("+")} .forge/${file}`);
     }
+
+    // Workspace scanning
+    if (options.scan) {
+      console.log(chalk.gray("\n  Scanning for workspaces..."));
+      const { scanWorkspaces } = await import("./commands/workspace-scan.js");
+      const wsResult = await scanWorkspaces(cwd, { verbose: options.verbose });
+      if (wsResult.workspaces.length > 0) {
+        // Write workspaces to config
+        const { join } = await import("path");
+        const { readFileSync, writeFileSync } = await import("fs");
+        const configPath = join(cwd, ".forge", "forge.config.json");
+        const config = JSON.parse(readFileSync(configPath, "utf-8"));
+        config.workspaces = wsResult.workspaces;
+        // Update root commands from first workspace
+        const primary = wsResult.workspaces[0]!;
+        config.commands.test = primary.test;
+        config.commands.lint = primary.lint;
+        if (primary.build) config.commands.build = primary.build;
+        writeFileSync(configPath, JSON.stringify(config, null, 2) + "\n");
+
+        console.log(chalk.green(`  Detected ${wsResult.workspaces.length} workspace(s):`));
+        for (const ws of wsResult.workspaces) {
+          console.log(`    ${chalk.bold(ws.name)} (${ws.type}) — ${ws.path}`);
+          console.log(chalk.gray(`      test: ${ws.test}`));
+          console.log(chalk.gray(`      lint: ${ws.lint}`));
+        }
+      } else if (wsResult.error) {
+        console.log(chalk.yellow(`  Workspace scan failed: ${wsResult.error}`));
+      } else {
+        console.log(chalk.gray("  No additional workspaces detected."));
+      }
+    }
+
     console.log(
       `\nNext: ${chalk.cyan("forge import <prd-file>")} or ${chalk.cyan("forge run")}`
     );

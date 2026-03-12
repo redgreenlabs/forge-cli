@@ -106,6 +106,26 @@ const CommandsConfigSchema = z.object({
   typecheck: z.string(),
 });
 
+/** Workspace configuration for multi-project repos */
+const WorkspaceConfigSchema = z.object({
+  /** Display name for this workspace */
+  name: z.string(),
+  /** Path relative to project root (use "." for root) */
+  path: z.string(),
+  /** Project type */
+  type: z.enum(["node", "python", "rust", "go", "other"]),
+  /** Test command to run in this workspace */
+  test: z.string(),
+  /** Lint command to run in this workspace */
+  lint: z.string(),
+  /** Build command (optional) */
+  build: z.string().optional(),
+  /** Coverage command (optional) */
+  coverage: z.string().optional(),
+});
+
+export type WorkspaceConfig = z.infer<typeof WorkspaceConfigSchema>;
+
 /** Main Forge configuration schema */
 export const ForgeConfigSchema = z.object({
   /** Maximum loop iterations before forced stop */
@@ -136,6 +156,8 @@ export const ForgeConfigSchema = z.object({
   commands: CommandsConfigSchema,
   /** Retry settings for failed phases */
   retry: RetryConfigSchema,
+  /** Workspace definitions for multi-project repos */
+  workspaces: z.array(WorkspaceConfigSchema).optional(),
 });
 
 export type ForgeConfig = z.infer<typeof ForgeConfigSchema>;
