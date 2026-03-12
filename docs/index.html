@@ -3,8 +3,8 @@
 <head>
   <meta charset="UTF-8">
   <meta name="viewport" content="width=device-width, initial-scale=1.0">
-  <title>Forge CLI — Autonomous Development Orchestrator</title>
-  <meta name="description" content="Drive Claude Code through TDD loops with multi-agent teams, security scanning, and conventional commits.">
+  <title>Forge CLI — Software Craftsmanship, Automated</title>
+  <meta name="description" content="Forge builds software the way it should be built: tests first, security always, every commit meaningful. Autonomous agents that practice the craft.">
   <style>
     :root {
       --bg: #0a0a0f;
@@ -19,6 +19,8 @@
       --red: #f87171;
       --yellow: #fbbf24;
       --orange: #fb923c;
+      --ember: #f97316;
+      --ember-glow: #f9731620;
     }
 
     * { margin: 0; padding: 0; box-sizing: border-box; }
@@ -33,10 +35,52 @@
 
     .container { max-width: 960px; margin: 0 auto; padding: 0 24px; }
 
+    /* Nav */
+    nav {
+      padding: 20px 0;
+      display: flex;
+      align-items: center;
+      justify-content: space-between;
+    }
+
+    .nav-logo {
+      display: flex;
+      align-items: center;
+      gap: 12px;
+      text-decoration: none;
+    }
+
+    .nav-logo span {
+      font-size: 18px;
+      font-weight: 800;
+      color: var(--text);
+      letter-spacing: -0.5px;
+    }
+
+    .nav-links {
+      display: flex;
+      gap: 28px;
+      list-style: none;
+    }
+
+    .nav-links a {
+      color: var(--text-muted);
+      text-decoration: none;
+      font-size: 14px;
+      font-weight: 500;
+      transition: color 0.2s;
+    }
+
+    .nav-links a:hover { color: var(--text); }
+
     /* Hero */
     .hero {
-      padding: 100px 0 80px;
+      padding: 80px 0 60px;
       text-align: center;
+    }
+
+    .hero-logo {
+      margin-bottom: 40px;
     }
 
     .hero-badge {
@@ -48,7 +92,7 @@
       font-size: 13px;
       font-weight: 600;
       letter-spacing: 0.5px;
-      margin-bottom: 24px;
+      margin-bottom: 28px;
     }
 
     .hero h1 {
@@ -56,16 +100,16 @@
       font-weight: 800;
       letter-spacing: -2px;
       line-height: 1.1;
-      margin-bottom: 20px;
+      margin-bottom: 24px;
     }
 
     .hero h1 span { color: var(--accent); }
 
-    .hero p {
+    .hero-sub {
       font-size: 20px;
       color: var(--text-muted);
-      max-width: 600px;
-      margin: 0 auto 40px;
+      max-width: 640px;
+      margin: 0 auto 16px;
     }
 
     .hero-actions {
@@ -73,6 +117,7 @@
       gap: 16px;
       justify-content: center;
       flex-wrap: wrap;
+      margin-top: 36px;
     }
 
     .btn {
@@ -99,6 +144,82 @@
       border: 1px solid var(--border);
     }
     .btn-secondary:hover { border-color: var(--accent); }
+
+    /* Manifesto */
+    .manifesto {
+      padding: 80px 0;
+      border-top: 1px solid var(--border);
+    }
+
+    .manifesto-grid {
+      display: grid;
+      grid-template-columns: 1fr 1fr;
+      gap: 60px;
+      align-items: center;
+    }
+
+    @media (max-width: 768px) {
+      .manifesto-grid { grid-template-columns: 1fr; }
+    }
+
+    .manifesto-text h2 {
+      font-size: 36px;
+      font-weight: 700;
+      letter-spacing: -1px;
+      margin-bottom: 20px;
+      line-height: 1.2;
+    }
+
+    .manifesto-text h2 span { color: var(--ember); }
+
+    .manifesto-text p {
+      color: var(--text-muted);
+      font-size: 16px;
+      margin-bottom: 16px;
+      line-height: 1.7;
+    }
+
+    .manifesto-text p strong { color: var(--text); }
+
+    .manifesto-principles {
+      list-style: none;
+      display: flex;
+      flex-direction: column;
+      gap: 16px;
+    }
+
+    .manifesto-principles li {
+      display: flex;
+      gap: 16px;
+      align-items: start;
+      background: var(--surface);
+      border: 1px solid var(--border);
+      border-radius: 10px;
+      padding: 20px;
+      transition: border-color 0.2s;
+    }
+
+    .manifesto-principles li:hover { border-color: #2e2e4e; }
+
+    .principle-icon {
+      font-size: 24px;
+      flex-shrink: 0;
+      width: 36px;
+      text-align: center;
+    }
+
+    .principle-text h4 {
+      font-size: 15px;
+      font-weight: 700;
+      margin-bottom: 4px;
+    }
+
+    .principle-text p {
+      font-size: 13px;
+      color: var(--text-muted);
+      margin: 0;
+      line-height: 1.5;
+    }
 
     /* Terminal */
     .terminal {
@@ -156,7 +277,15 @@
       font-size: 36px;
       font-weight: 700;
       letter-spacing: -1px;
-      margin-bottom: 60px;
+      margin-bottom: 20px;
+    }
+
+    .section-subtitle {
+      text-align: center;
+      color: var(--text-muted);
+      font-size: 16px;
+      max-width: 560px;
+      margin: 0 auto 60px;
     }
 
     .feature-grid {
@@ -389,12 +518,78 @@
 </head>
 <body>
 
+  <!-- Nav -->
+  <div class="container">
+    <nav>
+      <a href="#" class="nav-logo">
+        <!-- Forge Anvil Logo -->
+        <svg width="36" height="36" viewBox="0 0 64 64" fill="none" xmlns="http://www.w3.org/2000/svg">
+          <!-- Anvil body -->
+          <path d="M12 38 L20 28 L44 28 L52 38 L56 38 L56 44 L8 44 L8 38 Z" fill="#6ee7b7" opacity="0.9"/>
+          <!-- Anvil horn -->
+          <path d="M20 28 L6 32 L6 36 L12 38 L20 28 Z" fill="#6ee7b7" opacity="0.7"/>
+          <!-- Anvil base -->
+          <rect x="16" y="44" width="32" height="6" rx="1" fill="#6ee7b7" opacity="0.5"/>
+          <!-- Hammer -->
+          <rect x="30" y="6" width="4" height="20" rx="2" fill="#f97316" transform="rotate(-15, 32, 16)"/>
+          <rect x="24" y="4" width="16" height="8" rx="2" fill="#f97316" opacity="0.9" transform="rotate(-15, 32, 8)"/>
+          <!-- Sparks -->
+          <circle cx="22" cy="22" r="1.5" fill="#fbbf24" opacity="0.9"/>
+          <circle cx="18" cy="18" r="1" fill="#fbbf24" opacity="0.7"/>
+          <circle cx="26" cy="19" r="1" fill="#fbbf24" opacity="0.8"/>
+          <circle cx="15" cy="24" r="1.2" fill="#fb923c" opacity="0.6"/>
+        </svg>
+        <span>Forge</span>
+      </a>
+      <ul class="nav-links">
+        <li><a href="#manifesto">Why</a></li>
+        <li><a href="#features">Features</a></li>
+        <li><a href="#pipeline">Pipeline</a></li>
+        <li><a href="#install">Install</a></li>
+        <li><a href="https://github.com/your-org/forge-cli">GitHub</a></li>
+      </ul>
+    </nav>
+  </div>
+
   <!-- Hero -->
   <section class="hero">
     <div class="container">
-      <div class="hero-badge">Open Source</div>
-      <h1>Build software with<br><span>autonomous agents</span></h1>
-      <p>Forge drives Claude Code through TDD loops. Describe what to build. Get tested, secure, documented code with conventional commits.</p>
+      <div class="hero-logo">
+        <svg width="96" height="96" viewBox="0 0 64 64" fill="none" xmlns="http://www.w3.org/2000/svg">
+          <!-- Anvil body -->
+          <path d="M12 38 L20 28 L44 28 L52 38 L56 38 L56 44 L8 44 L8 38 Z" fill="#6ee7b7" opacity="0.9"/>
+          <!-- Anvil horn -->
+          <path d="M20 28 L6 32 L6 36 L12 38 L20 28 Z" fill="#6ee7b7" opacity="0.7"/>
+          <!-- Anvil base -->
+          <rect x="16" y="44" width="32" height="6" rx="1" fill="#6ee7b7" opacity="0.5"/>
+          <!-- Hammer -->
+          <rect x="30" y="6" width="4" height="20" rx="2" fill="#f97316" transform="rotate(-15, 32, 16)"/>
+          <rect x="24" y="4" width="16" height="8" rx="2" fill="#f97316" opacity="0.9" transform="rotate(-15, 32, 8)"/>
+          <!-- Sparks -->
+          <circle cx="22" cy="22" r="1.5" fill="#fbbf24" opacity="0.9">
+            <animate attributeName="opacity" values="0.9;0.3;0.9" dur="1.5s" repeatCount="indefinite"/>
+          </circle>
+          <circle cx="18" cy="18" r="1" fill="#fbbf24" opacity="0.7">
+            <animate attributeName="opacity" values="0.7;0.2;0.7" dur="2s" repeatCount="indefinite"/>
+          </circle>
+          <circle cx="26" cy="19" r="1" fill="#fbbf24" opacity="0.8">
+            <animate attributeName="opacity" values="0.8;0.2;0.8" dur="1.8s" repeatCount="indefinite"/>
+          </circle>
+          <circle cx="15" cy="24" r="1.2" fill="#fb923c" opacity="0.6">
+            <animate attributeName="opacity" values="0.6;0.1;0.6" dur="2.2s" repeatCount="indefinite"/>
+          </circle>
+          <circle cx="28" cy="16" r="0.8" fill="#fbbf24" opacity="0.5">
+            <animate attributeName="opacity" values="0.5;0.1;0.5" dur="1.3s" repeatCount="indefinite"/>
+          </circle>
+        </svg>
+      </div>
+
+      <div class="hero-badge">Software Craftsmanship</div>
+      <h1>Build software<br><span>the right way</span></h1>
+      <p class="hero-sub">
+        Forge is an autonomous development orchestrator that practices the craft: tests first, security always, every commit meaningful. It doesn't just write code &mdash; it builds software the way a disciplined team would.
+      </p>
+
       <div class="hero-actions">
         <a href="https://github.com/your-org/forge-cli" class="btn btn-primary">View on GitHub</a>
         <a href="#install" class="btn btn-secondary">Get Started</a>
@@ -418,11 +613,63 @@
     </div>
   </section>
 
+  <!-- Manifesto -->
+  <section class="manifesto" id="manifesto">
+    <div class="container">
+      <div class="manifesto-grid">
+        <div class="manifesto-text">
+          <h2>AI that writes code is easy.<br><span>AI that crafts software is hard.</span></h2>
+          <p>
+            Most AI tools generate code. Forge builds software. There's a difference.
+          </p>
+          <p>
+            <strong>Software craftsmanship means discipline.</strong> It means writing the test before the implementation. It means scanning for secrets and vulnerabilities on every change. It means each commit tells a story. It means stopping when something is wrong rather than plowing forward.
+          </p>
+          <p>
+            Forge encodes these principles into an autonomous loop. You describe what to build. Forge builds it the way a senior engineer would &mdash; methodically, safely, and with a clean git history you'd be proud to ship.
+          </p>
+        </div>
+
+        <ul class="manifesto-principles">
+          <li>
+            <div class="principle-icon">&#x1F9EA;</div>
+            <div class="principle-text">
+              <h4>Tests First, Always</h4>
+              <p>Every feature starts with a failing test. No exceptions. Red-Green-Refactor isn't a suggestion &mdash; it's enforced.</p>
+            </div>
+          </li>
+          <li>
+            <div class="principle-icon">&#x1F6E1;</div>
+            <div class="principle-text">
+              <h4>Security Is Not Optional</h4>
+              <p>Secret detection, SAST scanning, and dependency audits run on every iteration. Critical findings block the loop.</p>
+            </div>
+          </li>
+          <li>
+            <div class="principle-icon">&#x1F4DD;</div>
+            <div class="principle-text">
+              <h4>Every Commit Tells a Story</h4>
+              <p>Conventional commits per TDD phase: <code>test:</code>, <code>feat:</code>, <code>refactor:</code>. Your git log reads like documentation.</p>
+            </div>
+          </li>
+          <li>
+            <div class="principle-icon">&#x26A0;&#xFE0F;</div>
+            <div class="principle-text">
+              <h4>Know When to Stop</h4>
+              <p>The circuit breaker detects stagnation &mdash; repeated failures, no progress, regressions &mdash; and halts before wasting time and tokens.</p>
+            </div>
+          </li>
+        </ul>
+      </div>
+    </div>
+  </section>
+
   <!-- Features -->
-  <section class="features">
+  <section class="features" id="features">
     <div class="container">
       <div class="section-label">Capabilities</div>
-      <h2 class="section-title">Everything you need for autonomous development</h2>
+      <h2 class="section-title">The full toolkit for autonomous development</h2>
+      <p class="section-subtitle">Every practice that makes software reliable &mdash; automated, enforced, and built into the loop.</p>
 
       <div class="feature-grid">
         <div class="feature-card">
@@ -433,7 +680,7 @@
         <div class="feature-card">
           <div class="feature-icon">&#x1F916;</div>
           <h3>Multi-Agent Teams</h3>
-          <p>6 specialized agents — Architect, Implementer, Tester, Reviewer, Security, Documenter — automatically matched to tasks.</p>
+          <p>6 specialized agents &mdash; Architect, Implementer, Tester, Reviewer, Security, Documenter &mdash; automatically matched to tasks.</p>
         </div>
         <div class="feature-card">
           <div class="feature-icon">&#x1F6E1;</div>
@@ -453,7 +700,7 @@
         <div class="feature-card">
           <div class="feature-icon">&#x26A1;</div>
           <h3>Circuit Breaker</h3>
-          <p>Nygard pattern detects stagnation — repeated failures, no progress, test regressions — and stops the loop before wasting tokens.</p>
+          <p>Nygard pattern detects stagnation &mdash; repeated failures, no progress, test regressions &mdash; and stops the loop before wasting tokens.</p>
         </div>
         <div class="feature-card">
           <div class="feature-icon">&#x1F4CA;</div>
@@ -475,10 +722,11 @@
   </section>
 
   <!-- Pipeline -->
-  <section class="pipeline">
+  <section class="pipeline" id="pipeline">
     <div class="container">
       <div class="section-label">Pipeline</div>
       <h2 class="section-title">Each iteration, every time</h2>
+      <p class="section-subtitle">No shortcuts. The same disciplined process on every task, whether it's the first or the fiftieth.</p>
 
       <div class="pipeline-flow">
         <div class="pipeline-step">
@@ -538,19 +786,19 @@
           <ol class="speckit-steps">
             <li>
               <div class="step-num">1</div>
-              <div class="step-text"><strong>Specify</strong> <span>— Generate spec.md and constitution.md with spec-kit</span></div>
+              <div class="step-text"><strong>Specify</strong> <span>&mdash; Generate spec.md and constitution.md with spec-kit</span></div>
             </li>
             <li>
               <div class="step-num">2</div>
-              <div class="step-text"><strong>Plan</strong> <span>— Generate plan.md with architecture decisions</span></div>
+              <div class="step-text"><strong>Plan</strong> <span>&mdash; Generate plan.md with architecture decisions</span></div>
             </li>
             <li>
               <div class="step-num">3</div>
-              <div class="step-text"><strong>Tasks</strong> <span>— Generate tasks.md with phased, dependency-ordered tasks</span></div>
+              <div class="step-text"><strong>Tasks</strong> <span>&mdash; Generate tasks.md with phased, dependency-ordered tasks</span></div>
             </li>
             <li>
               <div class="step-num">4</div>
-              <div class="step-text"><strong>Forge run</strong> <span>— Auto-detects specs/ and executes with full context injection</span></div>
+              <div class="step-text"><strong>Forge run</strong> <span>&mdash; Auto-detects specs/ and executes with full context injection</span></div>
             </li>
           </ol>
         </div>
@@ -581,8 +829,8 @@
   <section class="install" id="install">
     <div class="container">
       <div class="install-box">
-        <h2>Get started in seconds</h2>
-        <p>Install Forge CLI and start building.</p>
+        <h2>Start building the right way</h2>
+        <p>Install Forge and let the craft speak for itself.</p>
         <div class="install-cmd">npm install -g forge-cli</div>
         <div class="install-prereq">
           Requires Node.js &ge; 20 and <a href="https://docs.anthropic.com/en/docs/claude-code">Claude Code CLI</a>
@@ -594,7 +842,16 @@
   <!-- Footer -->
   <footer>
     <div class="container">
-      <p>Forge CLI &mdash; MIT License &mdash; <a href="https://github.com/your-org/forge-cli">GitHub</a></p>
+      <p>
+        <svg width="18" height="18" viewBox="0 0 64 64" fill="none" xmlns="http://www.w3.org/2000/svg" style="vertical-align: middle; margin-right: 6px;">
+          <path d="M12 38 L20 28 L44 28 L52 38 L56 38 L56 44 L8 44 L8 38 Z" fill="#6ee7b7" opacity="0.5"/>
+          <path d="M20 28 L6 32 L6 36 L12 38 L20 28 Z" fill="#6ee7b7" opacity="0.4"/>
+          <rect x="16" y="44" width="32" height="6" rx="1" fill="#6ee7b7" opacity="0.3"/>
+          <rect x="30" y="6" width="4" height="20" rx="2" fill="#f97316" opacity="0.5" transform="rotate(-15, 32, 16)"/>
+          <rect x="24" y="4" width="16" height="8" rx="2" fill="#f97316" opacity="0.4" transform="rotate(-15, 32, 8)"/>
+        </svg>
+        Forge CLI &mdash; MIT License &mdash; <a href="https://github.com/your-org/forge-cli">GitHub</a>
+      </p>
     </div>
   </footer>
 
