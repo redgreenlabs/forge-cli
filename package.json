@@ -31,8 +31,18 @@
     "security",
     "forge"
   ],
-  "author": "",
+  "author": "Red Green Labs",
   "license": "MIT",
+  "repository": {
+    "type": "git",
+    "url": "https://github.com/redgreenlabs/forge-cli"
+  },
+  "homepage": "https://redgreenlabs.github.io/forge-cli",
+  "files": [
+    "dist",
+    "LICENSE",
+    "README.md"
+  ],
   "engines": {
     "node": ">=20"
   },
