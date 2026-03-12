@@ -147,6 +147,7 @@ export class LoopOrchestrator {
     // Pre-populate completed tasks from scan results
     for (const task of options.tasks) {
       if (task.status === "done") {
+        this.taskGraph.markComplete(task.id);
         this.engine.recordTaskCompleted(task.id);
       }
     }
