@@ -298,8 +298,12 @@ describe("commitPhase", () => {
     expect(result.message).toContain("task-42");
   });
 
-  it("should handle commit failure gracefully", async () => {
-    // Try to commit a file that doesn't exist
+  it("should return committed=false when no changes exist", async () => {
+    // Create an initial commit so git has a HEAD
+    writeFileSync(join(tmpDir, "README.md"), "# test");
+    execSync("git add -A && git commit -m 'init'", { cwd: tmpDir, stdio: "pipe" });
+
+    // Now try to commit with no new changes
     const result = await commitPhase(
       TddPhase.Green,
       ["nonexistent.ts"],
@@ -308,6 +312,6 @@ describe("commitPhase", () => {
     );
 
     expect(result.committed).toBe(false);
-    expect(result.message.length).toBeGreaterThan(0);
+    expect(result.message).toBe("Nothing staged to commit");
   });
 });

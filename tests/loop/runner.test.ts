@@ -1,5 +1,5 @@
 import { describe, it, expect, vi, beforeEach, afterEach } from "vitest";
-import { mkdtempSync, rmSync, existsSync, readFileSync, mkdirSync, writeFileSync } from "fs";
+import { mkdtempSync, rmSync, existsSync, readFileSync, mkdirSync, writeFileSync, readdirSync } from "fs";
 import { join } from "path";
 import { tmpdir } from "os";
 import {
@@ -265,6 +265,60 @@ describe("LoopRunner", () => {
       // If t1 is already complete, the orchestrator should move to t2
       // The key check is that it didn't re-do t1
       expect(result.iterations).toBeGreaterThan(0);
+    });
+
+    it("should update prd.json with completed task status", async () => {
+      // Write a prd.json with pending tasks
+      writeFileSync(
+        join(tmpDir, "prd.json"),
+        JSON.stringify({
+          title: "Test",
+          description: "",
+          tasks: [
+            { id: "t1", title: "Task 1", status: "pending", priority: "high", acceptanceCriteria: [], dependsOn: [] },
+            { id: "t2", title: "Task 2", status: "pending", priority: "medium", acceptanceCriteria: [], dependsOn: ["t1"] },
+          ],
+        }, null, 2) + "\n"
+      );
+
+      const runner = new LoopRunner({
+        config: { ...defaultConfig, maxIterations: 5 },
+        executor: mockExecutor(),
+        tasks: [sampleTasks[0]!],
+        forgeDir: tmpDir,
+      });
+
+      await runner.run();
+
+      // prd.json should be updated
+      const prd = JSON.parse(readFileSync(join(tmpDir, "prd.json"), "utf-8"));
+      const t1 = prd.tasks.find((t: { id: string }) => t.id === "t1");
+      expect(t1.status).toBe("done");
+
+      // t2 should still be pending
+      const t2 = prd.tasks.find((t: { id: string }) => t.id === "t2");
+      expect(t2.status).toBe("pending");
+    });
+
+    it("should update tasks.md checkboxes for completed tasks", async () => {
+      // Write a tasks.md with checkboxes
+      writeFileSync(
+        join(tmpDir, "tasks.md"),
+        `# Tasks\n\n## Priority: High\n- [ ] [t1] Task 1\n\n## Priority: Medium\n- [ ] [t2] Task 2 (depends: t1)\n`
+      );
+
+      const runner = new LoopRunner({
+        config: { ...defaultConfig, maxIterations: 5 },
+        executor: mockExecutor(),
+        tasks: [sampleTasks[0]!],
+        forgeDir: tmpDir,
+      });
+
+      await runner.run();
+
+      const content = readFileSync(join(tmpDir, "tasks.md"), "utf-8");
+      expect(content).toContain("- [x] [t1]");
+      expect(content).toContain("- [ ] [t2]");
     });
   });
 });

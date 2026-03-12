@@ -1,4 +1,4 @@
-import { appendFileSync, mkdirSync, existsSync } from "fs";
+import { appendFileSync, mkdirSync, existsSync, readFileSync, writeFileSync } from "fs";
 import { join } from "path";
 import type { ForgeConfig } from "../config/schema.js";
 import type { PrdTask } from "../prd/parser.js";
@@ -44,8 +44,10 @@ export class LoopRunner {
   private startedAt: number = 0;
   private resume: boolean;
   private logFilePath: string | null = null;
+  private forgeDir: string | null;
 
   constructor(options: LoopRunnerOptions) {
+    this.forgeDir = options.forgeDir ?? null;
     this.orchestrator = new LoopOrchestrator({
       config: options.config,
       executor: options.executor,
@@ -124,6 +126,7 @@ export class LoopRunner {
     this.flushLogs();
 
     // Save context for next run
+    const completedIds = this.getCompletedTaskIds();
     if (this.contextManager) {
       try {
         this.contextManager.handoff = this.orchestrator.handoffContext;
@@ -131,7 +134,6 @@ export class LoopRunner {
         this.contextManager.setSharedState("committedCount", this.orchestrator.committedCount);
 
         // Persist completed task IDs for resume
-        const completedIds = this.getCompletedTaskIds();
         this.contextManager.setSharedState("completedTaskIds", completedIds);
 
         this.contextManager.save();
@@ -139,6 +141,9 @@ export class LoopRunner {
         // Non-fatal — context won't persist
       }
     }
+
+    // Update prd.json and tasks.md on disk to reflect completed tasks
+    this.persistTaskStatus(completedIds);
 
     // Collect any errors from circuit breaker trips
     const cbStats = this.orchestrator.circuitBreakerStats;
@@ -178,6 +183,46 @@ export class LoopRunner {
     return [...state.completedTaskIds];
   }
 
+  /**
+   * Update prd.json and tasks.md on disk to mark completed tasks as done.
+   *
+   * This ensures `forge status` shows accurate progress by reading
+   * task status directly from the PRD files.
+   */
+  private persistTaskStatus(completedIds: string[]): void {
+    if (!this.forgeDir || completedIds.length === 0) return;
+
+    try {
+      // Update prd.json
+      const prdJsonPath = join(this.forgeDir, "prd.json");
+      if (existsSync(prdJsonPath)) {
+        const prdData = JSON.parse(readFileSync(prdJsonPath, "utf-8"));
+        if (Array.isArray(prdData.tasks)) {
+          for (const task of prdData.tasks) {
+            if (completedIds.includes(task.id)) {
+              task.status = "done";
+            }
+          }
+          writeFileSync(prdJsonPath, JSON.stringify(prdData, null, 2) + "\n");
+        }
+      }
+
+      // Update tasks.md — replace [ ] with [x] for completed tasks
+      const tasksMdPath = join(this.forgeDir, "tasks.md");
+      if (existsSync(tasksMdPath)) {
+        let content = readFileSync(tasksMdPath, "utf-8");
+        for (const id of completedIds) {
+          // Match: - [ ] [task-id] ...
+          const pattern = new RegExp(`^(- )\\[ \\]( \\[${escapeRegex(id)}\\])`, "gm");
+          content = content.replace(pattern, "$1[x]$2");
+        }
+        writeFileSync(tasksMdPath, content);
+      }
+    } catch {
+      // Non-fatal — status display may be stale
+    }
+  }
+
   /** Write a single log entry to the log file */
   private writeLog(entry: AgentLogEntry): void {
     if (!this.logFilePath) return;
@@ -201,4 +246,9 @@ export class LoopRunner {
       // Non-fatal
     }
   }
+}
+
+/** Escape special regex characters in a string */
+function escapeRegex(str: string): string {
+  return str.replace(/[.*+?^${}()|[\]\\]/g, "\\$&");
 }

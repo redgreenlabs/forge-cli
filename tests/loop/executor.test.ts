@@ -1,8 +1,13 @@
-import { describe, it, expect, vi, beforeEach } from "vitest";
+import { describe, it, expect, vi, beforeEach, afterEach } from "vitest";
+import { mkdtempSync, writeFileSync, rmSync, mkdirSync } from "fs";
+import { join } from "path";
+import { tmpdir } from "os";
+import { execSync } from "child_process";
 import {
   ClaudeCodeExecutor,
   parseClaudeResponse,
   buildClaudeArgs,
+  detectChangedFiles,
   type ClaudeExecOptions,
   type RawClaudeOutput,
 } from "../../src/loop/executor.js";
@@ -308,6 +313,54 @@ EXIT_SIGNAL: false
       expect(result.testResults.total).toBe(9);
       expect(result.testResults.passed).toBe(8);
       expect(result.testResults.failed).toBe(1);
+    });
+  });
+
+  describe("detectChangedFiles", () => {
+    let tmpDir: string;
+
+    beforeEach(() => {
+      tmpDir = mkdtempSync(join(tmpdir(), "forge-detect-"));
+      execSync("git init", { cwd: tmpDir, stdio: "pipe" });
+      execSync('git config user.email "test@test.com"', { cwd: tmpDir, stdio: "pipe" });
+      execSync('git config user.name "Test"', { cwd: tmpDir, stdio: "pipe" });
+      writeFileSync(join(tmpDir, "initial.ts"), "export const x = 1;");
+      execSync("git add -A && git commit -m 'init'", { cwd: tmpDir, stdio: "pipe" });
+    });
+
+    afterEach(() => {
+      rmSync(tmpDir, { recursive: true, force: true });
+    });
+
+    it("should return empty when no changes", () => {
+      const files = detectChangedFiles(tmpDir);
+      expect(files).toEqual([]);
+    });
+
+    it("should detect new untracked files", () => {
+      writeFileSync(join(tmpDir, "new-file.ts"), "export const y = 2;");
+      const files = detectChangedFiles(tmpDir);
+      expect(files).toContain("new-file.ts");
+    });
+
+    it("should detect modified files", () => {
+      writeFileSync(join(tmpDir, "initial.ts"), "export const x = 99;");
+      const files = detectChangedFiles(tmpDir);
+      expect(files).toContain("initial.ts");
+    });
+
+    it("should detect files in subdirectories", () => {
+      mkdirSync(join(tmpDir, "src"), { recursive: true });
+      writeFileSync(join(tmpDir, "src/app.ts"), "export const app = true;");
+      const files = detectChangedFiles(tmpDir);
+      expect(files).toContain("src/app.ts");
+    });
+
+    it("should return empty for non-git directory", () => {
+      const nonGitDir = mkdtempSync(join(tmpdir(), "forge-nogit-"));
+      const files = detectChangedFiles(nonGitDir);
+      expect(files).toEqual([]);
+      rmSync(nonGitDir, { recursive: true, force: true });
     });
   });
 });

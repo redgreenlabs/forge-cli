@@ -271,18 +271,50 @@ function extractStatusBlock(
 }
 
 /**
+ * Detect files changed in the working tree using git status.
+ *
+ * Returns paths of modified, added, and untracked files relative to projectRoot.
+ * Used after each Claude execution to detect what files the agent touched,
+ * since `--output-format json` only returns the result text, not tool_use entries.
+ */
+export function detectChangedFiles(projectRoot: string): string[] {
+  try {
+    const { execSync } = require("child_process") as typeof import("child_process");
+    // --porcelain gives stable, parseable output
+    const output = execSync("git status --porcelain", {
+      cwd: projectRoot,
+      encoding: "utf-8",
+      stdio: ["pipe", "pipe", "pipe"],
+    });
+    return output
+      .split("\n")
+      .filter((line) => line.trim().length > 0)
+      .map((line) => line.slice(3).trim())
+      .filter((f) => f.length > 0);
+  } catch {
+    return [];
+  }
+}
+
+/**
  * Claude Code executor that spawns the CLI process.
  *
  * Uses `child_process.spawn` to run `claude` with constructed arguments.
  * Captures stdout/stderr and parses the response.
+ *
+ * After each execution, detects changed files via `git status` since
+ * Claude CLI's `--output-format json` returns only the result text,
+ * not the full conversation with tool_use entries.
  */
 export class ClaudeCodeExecutor {
   private claudeCmd: string;
   private verbose: boolean;
+  private projectRoot: string;
 
-  constructor(claudeCmd: string = "claude", verbose: boolean = false) {
+  constructor(claudeCmd: string = "claude", verbose: boolean = false, projectRoot?: string) {
     this.claudeCmd = claudeCmd;
     this.verbose = verbose;
+    this.projectRoot = projectRoot ?? process.cwd();
   }
 
   async execute(options: ClaudeExecOptions): Promise<ClaudeResponse> {
@@ -297,6 +329,9 @@ export class ClaudeCodeExecutor {
       process.stderr.write(`[forge] stdin=ignore, CLAUDECODE stripped\n`);
     }
 
+    // Snapshot changed files before execution to diff later
+    const filesBefore = new Set(detectChangedFiles(this.projectRoot));
+
     const { spawn } = await import("child_process");
 
     return new Promise((resolve) => {
@@ -308,6 +343,7 @@ export class ClaudeCodeExecutor {
         timeout: options.timeout,
         stdio: ["ignore", "pipe", "pipe"],
         env,
+        cwd: this.projectRoot,
       });
 
       let stdout = "";
@@ -333,7 +369,21 @@ export class ClaudeCodeExecutor {
           stderr,
           exitCode: code ?? 1,
         };
-        resolve(parseClaudeResponse(raw));
+        const response = parseClaudeResponse(raw);
+
+        // Detect files changed by this execution via git
+        if (response.status === "success" && response.filesModified.length === 0) {
+          const filesAfter = detectChangedFiles(this.projectRoot);
+          const newFiles = filesAfter.filter((f) => !filesBefore.has(f));
+          if (newFiles.length > 0) {
+            response.filesModified = newFiles;
+            if (this.verbose) {
+              process.stderr.write(`[forge] Detected ${newFiles.length} changed files via git: ${newFiles.join(", ")}\n`);
+            }
+          }
+        }
+
+        resolve(response);
       });
 
       proc.on("error", (err) => {

@@ -17,6 +17,12 @@ import { CommitOrchestrator } from "../commits/orchestrator.js";
 import { TddPhase } from "../tdd/enforcer.js";
 import type { SecurityScanResult, CommitResult } from "./pipeline.js";
 
+/** Escape a string for safe use as a shell argument */
+function escapeShellArg(arg: string): string {
+  // Use single quotes, escaping any embedded single quotes
+  return `'${arg.replace(/'/g, "'\\''")}'`;
+}
+
 /**
  * Scan modified files for security issues using SAST and secret detection.
  *
@@ -93,16 +99,27 @@ export async function commitPhase(
   try {
     const { execSync } = await import("child_process");
 
-    // Stage specific files
-    const fileArgs = files.map((f) => `"${f}"`).join(" ");
-    execSync(`git add -- ${fileArgs}`, {
+    // Stage all changes — files list may contain relative or absolute paths,
+    // and Claude may have created/modified files not in our list.
+    // Using git add -A in projectRoot captures everything the agent touched.
+    execSync("git add -A", {
       cwd: projectRoot,
       stdio: "pipe",
     });
 
-    // Commit — use heredoc-style to avoid shell escaping issues
-    const escapedMessage = plan.message.replace(/"/g, '\\"');
-    execSync(`git commit -m "${escapedMessage}"`, {
+    // Check if there's anything staged to commit
+    const status = execSync("git diff --cached --name-only", {
+      cwd: projectRoot,
+      encoding: "utf-8",
+      stdio: ["pipe", "pipe", "pipe"],
+    }).trim();
+
+    if (!status) {
+      return { committed: false, message: "Nothing staged to commit" };
+    }
+
+    // Commit with the planned message
+    execSync(`git commit -m ${escapeShellArg(plan.message)}`, {
       cwd: projectRoot,
       stdio: "pipe",
     });

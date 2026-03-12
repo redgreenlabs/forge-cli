@@ -256,7 +256,7 @@ program
 
     // Create executor
     const { ClaudeCodeExecutor } = await import("./loop/executor.js");
-    const executor = new ClaudeCodeExecutor("claude", !!options.verbose);
+    const executor = new ClaudeCodeExecutor("claude", !!options.verbose, cwd);
 
     // Create runner
     const { LoopRunner } = await import("./loop/runner.js");
