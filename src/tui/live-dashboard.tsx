@@ -1,6 +1,5 @@
 import { useState, useEffect } from "react";
 import { render, Text, Box, useStdout } from "ink";
-import Spinner from "ink-spinner";
 import type { LoopState } from "../loop/engine.js";
 import { LoopPhase } from "../loop/engine.js";
 import { CircuitBreakerState } from "../loop/circuit-breaker.js";
@@ -67,16 +66,8 @@ function ProgressBar({ percent, width = 20 }: { percent: number; width?: number 
   );
 }
 
-function Header({ state, startedAt }: { state: LoopState; startedAt: number }) {
-  const [elapsed, setElapsed] = useState(Date.now() - startedAt);
-
-  useEffect(() => {
-    const interval = setInterval(() => {
-      setElapsed(Date.now() - startedAt);
-    }, 1000);
-    return () => clearInterval(interval);
-  }, [startedAt]);
-
+function Header({ state, startedAt, now }: { state: LoopState; startedAt: number; now: number }) {
+  const elapsed = now - startedAt;
   const phaseColor = PHASE_COLORS[state.phase];
   const progress =
     state.totalTasks > 0
@@ -253,8 +244,17 @@ function AgentLog({ entries, maxEntries = 8 }: { entries: AgentLogEntry[]; maxEn
  * - Agent activity log (last 8 entries)
  * - Animated spinner while running
  */
+const WORK_INDICATORS = ["⠋", "⠙", "⠹", "⠸", "⠼", "⠴", "⠦", "⠧", "⠇", "⠏"];
+
 function Dashboard({ state, startedAt }: { state: DashboardState; startedAt: number }) {
   const termHeight = useTerminalHeight();
+  const [tick, setTick] = useState(0);
+
+  // Single timer drives both elapsed clock and spinner — no extra re-renders
+  useEffect(() => {
+    const interval = setInterval(() => setTick((t) => t + 1), 1000);
+    return () => clearInterval(interval);
+  }, []);
 
   // Calculate how many agent log lines we can fit.
   // Fixed lines: header border(3) + stats(2) + progress(1) + blank(1) + task(1)
@@ -263,10 +263,11 @@ function Dashboard({ state, startedAt }: { state: DashboardState; startedAt: num
   const gateLines = state.qualityReport ? state.qualityReport.results.length + 1 : 0;
   const fixedLines = 12 + gateLines;
   const availableForLog = Math.max(2, termHeight - fixedLines);
+  const spinnerChar = WORK_INDICATORS[tick % WORK_INDICATORS.length];
 
   return (
-    <Box flexDirection="column" paddingX={1} height={termHeight}>
-      <Header state={state.loop} startedAt={startedAt} />
+    <Box flexDirection="column" paddingX={1}>
+      <Header state={state.loop} startedAt={startedAt} now={Date.now()} />
       <CurrentTask name={state.currentTask} />
       <StatusRow
         state={state.loop}
@@ -281,10 +282,8 @@ function Dashboard({ state, startedAt }: { state: DashboardState; startedAt: num
       </Box>
       {state.loop.phase !== LoopPhase.Idle ? (
         <Box>
-          <Text color="green">
-            <Spinner type="dots" />
-          </Text>
-          <Text color="gray"> Claude is working...</Text>
+          <Text color="green">{spinnerChar} </Text>
+          <Text color="gray">Claude is working...</Text>
         </Box>
       ) : (
         <Box>
