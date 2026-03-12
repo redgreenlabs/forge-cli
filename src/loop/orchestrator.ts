@@ -36,6 +36,7 @@ export interface ClaudeExecutor {
     allowedTools: string[];
     timeout: number;
     sessionId?: string;
+    onStderr?: (line: string) => void;
   }) => Promise<ClaudeResponse>;
 }
 
@@ -338,6 +339,7 @@ export class LoopOrchestrator {
           allowedTools: getAgentAllowedTools(AgentRole.Tester),
           timeout,
           sessionId,
+          onStderr: this.makeStderrHandler(AgentRole.Tester),
         });
 
         if (response.testResults) {
@@ -367,6 +369,7 @@ export class LoopOrchestrator {
           allowedTools: getAgentAllowedTools(AgentRole.Implementer),
           timeout,
           sessionId,
+          onStderr: this.makeStderrHandler(AgentRole.Implementer),
         });
 
         if (response.testResults) {
@@ -396,6 +399,7 @@ export class LoopOrchestrator {
           allowedTools: getAgentAllowedTools(AgentRole.Implementer),
           timeout,
           sessionId,
+          onStderr: this.makeStderrHandler(AgentRole.Implementer),
         });
 
         if (response.testResults) {
@@ -536,6 +540,77 @@ export class LoopOrchestrator {
       action,
       detail,
     });
+    this.emitDashboardUpdate();
+  }
+
+  /**
+   * Create an onStderr callback that parses Claude CLI output
+   * and logs tool usage as agent activity.
+   */
+  private makeStderrHandler(agentRole: string): (line: string) => void {
+    // Track last log time to throttle dashboard updates
+    let lastLogTime = 0;
+    const THROTTLE_MS = 500;
+
+    return (line: string) => {
+      const now = Date.now();
+      if (now - lastLogTime < THROTTLE_MS) return;
+
+      // Claude CLI stderr patterns for tool usage
+      const toolMatch = line.match(/(?:Tool|Using|Calling|tool_use).*?(?:Read|Write|Edit|Glob|Grep|Bash|NotebookEdit)\s*(?:\(([^)]*)\))?/i);
+      if (toolMatch) {
+        lastLogTime = now;
+        const detail = toolMatch[1] ? toolMatch[1].slice(0, 60) : line.slice(0, 60);
+        this._agentLog.push({
+          timestamp: now,
+          agent: agentRole,
+          action: "tool",
+          detail,
+        });
+        this.emitDashboardUpdate();
+        return;
+      }
+
+      // File path patterns (reading/writing files)
+      const fileMatch = line.match(/(?:Reading|Writing|Editing|Searching)\s+(.+)/i);
+      if (fileMatch) {
+        lastLogTime = now;
+        this._agentLog.push({
+          timestamp: now,
+          agent: agentRole,
+          action: "file",
+          detail: fileMatch[1]!.slice(0, 60),
+        });
+        this.emitDashboardUpdate();
+        return;
+      }
+
+      // Cost/token patterns
+      const costMatch = line.match(/cost[:\s]+\$?([\d.]+)/i);
+      if (costMatch) {
+        lastLogTime = now;
+        this._agentLog.push({
+          timestamp: now,
+          agent: "system",
+          action: "cost",
+          detail: `$${costMatch[1]}`,
+        });
+        this.emitDashboardUpdate();
+        return;
+      }
+
+      // Generic activity: show truncated stderr as heartbeat (every 3s)
+      if (now - lastLogTime >= 3000 && line.length > 5) {
+        lastLogTime = now;
+        this._agentLog.push({
+          timestamp: now,
+          agent: agentRole,
+          action: "working",
+          detail: line.trim().slice(0, 60),
+        });
+        this.emitDashboardUpdate();
+      }
+    };
   }
 
   private emitDashboardUpdate(): void {

@@ -357,9 +357,15 @@ export class ClaudeCodeExecutor {
       });
 
       proc.stderr?.on("data", (data: Buffer) => {
-        stderr += data.toString();
+        const text = data.toString();
+        stderr += text;
         if (this.verbose) {
-          process.stderr.write(`[forge:stderr] ${data.toString()}`);
+          process.stderr.write(`[forge:stderr] ${text}`);
+        }
+        if (options.onStderr) {
+          for (const line of text.split("\n")) {
+            if (line.trim()) options.onStderr(line);
+          }
         }
       });
 
