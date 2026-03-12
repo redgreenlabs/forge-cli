@@ -20,8 +20,8 @@ const WorkspaceResultSchema = z.array(
     name: z.string(),
     path: z.string(),
     type: z.enum(["node", "python", "rust", "go", "other"]),
-    test: z.string(),
-    lint: z.string(),
+    test: z.string().default("echo 'no test command'"),
+    lint: z.string().default("echo 'no lint command'"),
     build: z.string().optional(),
     coverage: z.string().optional(),
   })
