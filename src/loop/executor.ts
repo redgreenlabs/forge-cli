@@ -1,3 +1,4 @@
+import { execSync } from "child_process";
 import type { ClaudeResponse } from "./orchestrator.js";
 
 /** Options for building Claude CLI arguments */
@@ -279,7 +280,6 @@ function extractStatusBlock(
  */
 export function detectChangedFiles(projectRoot: string): string[] {
   try {
-    const { execSync } = require("child_process") as typeof import("child_process");
     // -u shows individual files in untracked directories (not just dir names)
     const output = execSync("git status --porcelain -u", {
       cwd: projectRoot,
