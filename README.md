@@ -96,12 +96,27 @@ forge run
 
 | Command | Description |
 |---------|-------------|
-| `forge init` | Initialize a new Forge project |
-| `forge import <file>` | Import a PRD from Markdown or JSON |
+| `forge init` | Initialize project, auto-detect workspaces |
+| `forge import <file>` | Import PRD, scan for existing implementations |
 | `forge run` | Start the autonomous development loop |
 | `forge status` | Show session progress and quality metrics |
 | `forge report` | Generate a project health report |
 | `forge agents` | List and configure agent roles |
+
+### `forge init` Options
+
+```
+--no-scan             Skip workspace auto-detection
+-n, --name <name>     Project name
+-i, --interactive     Guided PRD creation
+```
+
+### `forge import` Options
+
+```
+--no-scan             Skip codebase scan for existing implementations
+-v, --verbose         Show detailed scan output
+```
 
 ### `forge run` Options
 

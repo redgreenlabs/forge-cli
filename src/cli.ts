@@ -31,7 +31,7 @@ program
   .option("-i, --interactive", "Guide through PRD creation interactively")
   .option("-n, --name <name>", "Project name")
   .option("-f, --force", "Overwrite existing .forge directory")
-  .option("--scan", "Scan repo to auto-detect workspaces (uses Claude Code)")
+  .option("--no-scan", "Skip workspace auto-detection")
   .option("-v, --verbose", "Show detailed scan output")
   .action(async (options) => {
     const cwd = process.cwd();
@@ -124,7 +124,7 @@ program
     }
 
     // Workspace scanning
-    if (options.scan) {
+    if (options.scan !== false) {
       console.log(chalk.gray("\n  Scanning for workspaces..."));
       const { scanWorkspaces } = await import("./commands/workspace-scan.js");
       const wsResult = await scanWorkspaces(cwd, { verbose: options.verbose });
@@ -398,14 +398,14 @@ program
 program
   .command("import <file>")
   .description("Import a PRD from a file (Markdown, JSON, or text)")
-  .option("--scan", "Scan codebase to pre-mark implemented tasks as done")
+  .option("--no-scan", "Skip codebase scan for existing implementations")
   .option("-v, --verbose", "Show detailed scan output")
   .action(async (file: string, options: { scan?: boolean; verbose?: boolean }) => {
     const cwd = process.cwd();
     console.log(chalk.cyan(`Importing PRD from ${file}...`));
 
     let result;
-    if (options.scan) {
+    if (options.scan !== false) {
       const { importPrdWithScan } = await import("./commands/import.js");
       console.log(chalk.gray("  Scanning codebase for existing implementations..."));
       result = await importPrdWithScan(resolve(cwd, file), cwd, {
