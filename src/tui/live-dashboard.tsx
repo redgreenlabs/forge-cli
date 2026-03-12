@@ -322,7 +322,7 @@ export function startLiveDashboard(
     return <Dashboard state={dashState} startedAt={startedAt} />;
   }
 
-  const { unmount, clear } = render(<LiveWrapper />);
+  const { unmount, clear } = render(<LiveWrapper />, { fullScreen: true });
 
   return {
     updater: (state: DashboardState) => {
