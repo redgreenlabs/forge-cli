@@ -280,8 +280,8 @@ function extractStatusBlock(
 export function detectChangedFiles(projectRoot: string): string[] {
   try {
     const { execSync } = require("child_process") as typeof import("child_process");
-    // --porcelain gives stable, parseable output
-    const output = execSync("git status --porcelain", {
+    // -u shows individual files in untracked directories (not just dir names)
+    const output = execSync("git status --porcelain -u", {
       cwd: projectRoot,
       encoding: "utf-8",
       stdio: ["pipe", "pipe", "pipe"],
