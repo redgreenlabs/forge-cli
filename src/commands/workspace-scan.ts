@@ -86,8 +86,8 @@ Be precise about commands — read package.json scripts, pyproject.toml tool sec
       prompt,
       systemPrompt,
       allowedTools: ["Read", "Glob", "Grep", "Bash(ls)", "Bash(cat)"],
-      timeout: options?.timeout ?? 60_000,
-      maxBudgetUsd: 0.25,
+      timeout: options?.timeout ?? 120_000,
+      maxBudgetUsd: 1.0,
     });
 
     if (response.status === "error") {

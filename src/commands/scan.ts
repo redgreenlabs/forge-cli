@@ -69,8 +69,8 @@ and Read to verify implementation details. Focus on acceptance criteria.`;
       prompt,
       systemPrompt,
       allowedTools: ["Read", "Glob", "Grep", "Bash(ls)", "Bash(git log)"],
-      timeout: options?.timeout ?? 120_000,
-      maxBudgetUsd: 0.5,
+      timeout: options?.timeout ?? 300_000,
+      maxBudgetUsd: 2.0,
     });
 
     if (response.status === "error") {
@@ -82,7 +82,11 @@ and Read to verify implementation details. Focus on acceptance criteria.`;
     }
 
     // Parse results from Claude's output
-    const results = parseScanResponse(response.resultText ?? "");
+    const resultText = response.resultText ?? "";
+    if (options?.verbose) {
+      process.stderr.write(`[forge:scan] Result text (${resultText.length} chars): ${resultText.slice(0, 500)}\n`);
+    }
+    const results = parseScanResponse(resultText);
 
     const tasksMarkedDone = results.filter(
       (r) => r.status === "done" && r.confidence >= CONFIDENCE_THRESHOLD

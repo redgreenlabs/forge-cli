@@ -12,6 +12,8 @@ export interface ClaudeExecOptions {
   permissionMode?: string;
   /** Maximum budget in USD per call */
   maxBudgetUsd?: number;
+  /** Callback for real-time stderr lines from Claude CLI */
+  onStderr?: (line: string) => void;
 }
 
 /** Raw output from Claude CLI process */
