@@ -1,21 +1,20 @@
 # Forge CLI
 
-Autonomous multi-agent development orchestrator with TDD, security, and software craftsmanship.
+Autonomous multi-agent development orchestrator that drives Claude Code through TDD loops with security scanning and conventional commits.
 
-Forge drives Claude Code through intelligent development loops where specialized agents collaborate, tests are written before code, security scans run every iteration, and every change produces a conventional commit.
+You describe what to build. Forge builds it — test-first, secure, and documented.
 
 ## Features
 
+- **TDD Enforcement** — Red-Green-Refactor cycle tracked and enforced. Tests are written before code, every time.
 - **Multi-Agent Teams** — 6 specialized roles (Architect, Implementer, Tester, Reviewer, Security, Documenter) with automatic task-to-agent matching
-- **TDD Enforcement** — Red-Green-Refactor cycle tracked and enforced with violation detection
 - **Quality Gates** — 5-gate pipeline (tests, coverage, security, lint, commit) with blocking/warning severity
-- **Security Scanning** — Secret detection, SAST integration, dependency audit on every iteration
-- **Conventional Commits** — Automatic commit classification and validation at each working step
-- **Rich TUI Dashboard** — Real-time progress, agent activity, test results, coverage trends, security findings
-- **PRD Import** — Import requirements from Markdown or JSON, with dependency graph and topological ordering
-- **Circuit Breaker** — Stagnation detection (no-progress, repeated errors) with auto-recovery
-- **Session Continuity** — Resume loops across restarts with persistent session state
-- **Documentation** — Auto-generated changelogs, Architecture Decision Records (ADRs), health reports
+- **Security Scanning** — Secret detection, SAST, dependency audit on every iteration
+- **Conventional Commits** — Automatic commit per TDD phase (`test:`, `feat:`, `refactor:`)
+- **Live TUI Dashboard** — Real-time progress, agent activity, TDD phase, circuit breaker status
+- **Spec-Kit Integration** — Use [GitHub's spec-kit](https://github.com/github/spec-kit) for planning, Forge for execution
+- **Circuit Breaker** — Stagnation detection with auto-recovery (Nygard pattern)
+- **Session Continuity** — Resume loops across restarts with persistent state
 
 ## Quick Start
 
@@ -26,30 +25,81 @@ npm install -g forge-cli
 # Initialize a project
 forge init --name my-project
 
-# Import a PRD
+# Import requirements
 forge import requirements.md
 
 # Start the development loop
 forge run --iterations 20
 
-# Preview the dashboard without executing
-forge run --dry-run
-
-# Check status
+# Check progress
 forge status
+```
 
-# List agents
-forge agents
+## Task Sources
+
+Forge supports three task formats, auto-detected in priority order:
+
+### 1. Spec-Kit (recommended for new projects)
+
+Use [spec-kit](https://github.com/github/spec-kit) for the planning phase, then Forge for execution:
+
+```bash
+# Generate specs with spec-kit
+npx spec-kit specify
+npx spec-kit plan
+npx spec-kit tasks
+
+# Forge auto-detects specs/tasks.md
+forge run
+```
+
+Forge reads from `specs/`:
+
+| File | Purpose |
+|------|---------|
+| `specs/tasks.md` | Task list with T-IDs, phases, dependencies |
+| `specs/constitution.md` | Project principles — injected into agent prompts |
+| `specs/spec.md` | Detailed requirements — injected into agent prompts |
+| `specs/plan.md` | Architecture decisions — injected into agent prompts |
+
+Spec-kit task format:
+```markdown
+## Phase 1: Setup (Shared Infrastructure)
+
+- [ ] T001 [P] Initialize project structure
+- [ ] T002 Configure CI pipeline (depends on T001)
+
+## Phase 2: User Story 1 - Authentication (Priority: P1)
+
+- [ ] T003 [US1] Implement login endpoint
+  - Returns JWT token on success
+  - Returns 401 on invalid credentials
+```
+
+Markers: `[P]` = parallelizable, `[US1]` = user story ref, `(depends on T001)` = dependency.
+
+### 2. Forge PRD (JSON)
+
+```bash
+forge import requirements.md    # Parses to .forge/prd.json
+forge run
+```
+
+### 3. Markdown Task List
+
+```bash
+# Place a tasks.md in .forge/
+forge run
 ```
 
 ## Commands
 
 | Command | Description |
 |---------|-------------|
-| `forge init` | Initialize a new Forge project (creates `.forge/` directory) |
-| `forge import <file>` | Import a PRD from Markdown, JSON, or text |
+| `forge init` | Initialize a new Forge project |
+| `forge import <file>` | Import a PRD from Markdown or JSON |
 | `forge run` | Start the autonomous development loop |
-| `forge status` | Show current session and quality metrics |
+| `forge status` | Show session progress and quality metrics |
 | `forge report` | Generate a project health report |
 | `forge agents` | List and configure agent roles |
 
@@ -57,14 +107,32 @@ forge agents
 
 ```
 -n, --iterations <n>  Maximum iterations (default: 50)
---no-tui              Disable TUI dashboard (plain text output)
+--resume              Resume from previous run
+--no-tui              Disable live TUI (plain text output)
+--verbose             Show Claude CLI output
 --solo                Single agent mode
---dry-run             Preview dashboard without running Claude
+--dry-run             Preview without running Claude
 ```
+
+## How It Works
+
+Each iteration follows this pipeline:
+
+```
+Select Task → TDD Red (write failing test)
+            → TDD Green (implement to pass)
+            → TDD Refactor (clean up)
+            → Security Scan
+            → Quality Gates
+            → Conventional Commit
+            → Next Task
+```
+
+The loop stops when all tasks are complete, max iterations reached, or the circuit breaker trips (repeated failures).
 
 ## Configuration
 
-Forge uses `.forge/forge.config.json` for project-level settings:
+`.forge/forge.config.json`:
 
 ```json
 {
@@ -78,9 +146,7 @@ Forge uses `.forge/forge.config.json` for project-level settings:
   },
   "coverage": {
     "lineThreshold": 80,
-    "branchThreshold": 70,
-    "functionThreshold": 80,
-    "noRegression": true
+    "branchThreshold": 70
   },
   "security": {
     "enabled": true,
@@ -109,72 +175,36 @@ Forge uses `.forge/forge.config.json` for project-level settings:
 
 ```
 src/
-├── agents/          # Multi-agent role system
-│   ├── roles.ts     # 6 agent definitions with prompts and tool permissions
-│   ├── handoff.ts   # Inter-agent communication protocol
-│   ├── team.ts      # Team composition and pipeline ordering
-│   └── context-file.ts # Persistent shared context
-├── commands/        # CLI command implementations
-│   ├── init.ts      # Project scaffolding
-│   ├── import.ts    # PRD import
-│   ├── run.ts       # Run context preparation
-│   └── interactive-prd.ts # Guided PRD generation
-├── commits/         # Conventional commit management
-│   ├── classifier.ts # Auto-classification and validation
-│   └── orchestrator.ts # TDD phase-based commit planning
-├── config/          # Configuration management
-│   ├── schema.ts    # Zod-validated config schema
-│   └── loader.ts    # File + env var config loading
-├── docs/            # Documentation generation
-│   ├── adr.ts       # Architecture Decision Records
-│   └── changelog.ts # Changelog from conventional commits
-├── gates/           # Quality enforcement
-│   ├── quality-gates.ts # 5-gate pipeline
-│   └── plugin.ts    # Gate plugin registry with builtins
-├── loop/            # Core loop engine
-│   ├── engine.ts    # State machine with 8 phases
-│   ├── circuit-breaker.ts # Nygard pattern
-│   ├── executor.ts  # Claude Code CLI integration
-│   ├── orchestrator.ts # Agent + TDD + gates coordination
-│   ├── runner.ts    # High-level loop runner
-│   ├── session.ts   # Session persistence
-│   ├── rate-limiter.ts # Sliding-window rate limiter
-│   └── hooks.ts     # Lifecycle hook registry
-├── prd/             # PRD management
-│   ├── parser.ts    # Markdown/JSON parsing
-│   └── task-graph.ts # DAG with topological sort
-├── security/        # Security scanning
-│   ├── scanner.ts   # Secret detection
-│   ├── sast.ts      # SAST vulnerability scanner
-│   └── dep-audit.ts # Dependency audit parsers
-├── tdd/             # TDD enforcement
-│   └── enforcer.ts  # Red-Green-Refactor tracking
-├── tui/             # Terminal UI
-│   ├── renderer.ts  # Static dashboard panels
-│   ├── live-dashboard.tsx # Ink React live TUI
-│   └── error-panel.ts # Error/warning status panel
-├── cli.ts           # CLI entry point (6 commands)
-└── index.ts         # Public API exports
+├── agents/          # Multi-agent role system (roles, handoff, teams)
+├── commands/        # CLI commands (init, import, run, status, report)
+├── commits/         # Conventional commit classification and planning
+├── config/          # Zod-validated config with env var overrides
+├── docs/            # Changelog and ADR generation
+├── gates/           # Quality gate pipeline with plugin registry
+├── loop/            # Core engine, orchestrator, executor, circuit breaker
+├── prd/             # PRD parsing and task dependency graph (DAG)
+├── security/        # Secret detection, SAST, dependency audit
+├── speckit/         # Spec-kit format parser and context injection
+├── tdd/             # Red-Green-Refactor enforcement
+├── tui/             # Ink live dashboard and static renderer
+├── cli.ts           # CLI entry point
+└── index.ts         # Public API
 ```
 
 ## Development
 
 ```bash
-npm install          # Install dependencies
-npm test             # Run 437 tests
-npm run test:coverage # Run with coverage (94%+ statements)
-npm run typecheck    # TypeScript strict mode check
-npm run build        # Build with tsup
+npm install
+npm test              # Run tests
+npm run test:coverage # Coverage report
+npm run typecheck     # TypeScript strict mode
+npm run build         # Build with tsup
 ```
 
-## Quality Metrics
+## Requirements
 
-- **437 tests** across 38 test suites
-- **94.3%** statement coverage
-- **85.9%** branch coverage
-- **TypeScript strict mode** with no `any` types
-- **Conventional commits** throughout history
-- **Zero runtime dependencies** beyond chalk, commander, ink, pino, zod
+- Node.js >= 20
+- [Claude Code CLI](https://docs.anthropic.com/en/docs/claude-code) installed and authenticated
 
 ## License
 
