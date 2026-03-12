@@ -290,16 +290,24 @@ export class ClaudeCodeExecutor {
 
     if (this.verbose) {
       const promptPreview = options.prompt.slice(0, 80).replace(/\n/g, " ");
-      process.stderr.write(`[forge] Executing: ${this.claudeCmd} ${args.slice(0, 4).join(" ")} ...\n`);
-      process.stderr.write(`[forge] Prompt: ${promptPreview}...\n`);
+      const totalArgLen = args.reduce((s, a) => s + a.length, 0);
+      process.stderr.write(`[forge] Executing: ${this.claudeCmd} (${args.length} args, ${totalArgLen} chars total)\n`);
+      process.stderr.write(`[forge] Prompt (${options.prompt.length} chars): ${promptPreview}...\n`);
+      process.stderr.write(`[forge] Tools: ${options.allowedTools.join(", ")}\n`);
+      process.stderr.write(`[forge] stdin=ignore, CLAUDECODE stripped\n`);
     }
 
     const { spawn } = await import("child_process");
 
     return new Promise((resolve) => {
+      // Strip CLAUDECODE env var to prevent "cannot run inside another Claude" error
+      const env = { ...process.env };
+      delete env.CLAUDECODE;
+
       const proc = spawn(this.claudeCmd, args, {
         timeout: options.timeout,
-        stdio: ["pipe", "pipe", "pipe"],
+        stdio: ["ignore", "pipe", "pipe"],
+        env,
       });
 
       let stdout = "";
