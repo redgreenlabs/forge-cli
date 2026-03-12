@@ -99,6 +99,10 @@ Be precise about commands — read package.json scripts, pyproject.toml tool sec
 
     const workspaces = parseWorkspaceScanResponse(response.resultText ?? "");
 
+    if (workspaces.length === 0 && options?.verbose) {
+      process.stderr.write(`[forge:scan] No workspaces parsed from result (${(response.resultText ?? "").length} chars)\n`);
+    }
+
     return { workspaces };
   } catch (err) {
     return {

@@ -134,7 +134,7 @@ export function parseClaudeResponse(raw: RawClaudeOutput): ClaudeResponse {
     testsPass,
     testResults,
     error: null,
-    resultText,
+    resultText: resultText || raw.stdout,
   };
 }
 
