@@ -1,5 +1,5 @@
 import { useState, useEffect } from "react";
-import { render, Text, Box } from "ink";
+import { render, Text, Box, useStdout } from "ink";
 import Spinner from "ink-spinner";
 import type { LoopState } from "../loop/engine.js";
 import { LoopPhase } from "../loop/engine.js";
@@ -9,6 +9,20 @@ import { GateStatus } from "../gates/quality-gates.js";
 import type { DashboardState } from "../loop/orchestrator.js";
 import type { PipelineResult } from "../gates/quality-gates.js";
 import type { AgentLogEntry } from "../tui/renderer.js";
+
+/** Hook to track terminal dimensions */
+function useTerminalHeight(): number {
+  const { stdout } = useStdout();
+  const [height, setHeight] = useState(stdout?.rows ?? 24);
+
+  useEffect(() => {
+    const onResize = () => setHeight(stdout?.rows ?? 24);
+    stdout?.on("resize", onResize);
+    return () => { stdout?.off("resize", onResize); };
+  }, [stdout]);
+
+  return height;
+}
 
 const PHASE_COLORS: Record<LoopPhase, string> = {
   [LoopPhase.Idle]: "gray",
@@ -190,8 +204,8 @@ function QualityGatesPanel({ result }: { result?: PipelineResult }) {
   );
 }
 
-function AgentLog({ entries }: { entries: AgentLogEntry[] }) {
-  const recent = entries.slice(-8);
+function AgentLog({ entries, maxEntries = 8 }: { entries: AgentLogEntry[]; maxEntries?: number }) {
+  const recent = entries.slice(-maxEntries);
   const agentColors: Record<string, string> = {
     architect: "cyan",
     implementer: "green",
@@ -240,8 +254,18 @@ function AgentLog({ entries }: { entries: AgentLogEntry[] }) {
  * - Animated spinner while running
  */
 function Dashboard({ state, startedAt }: { state: DashboardState; startedAt: number }) {
+  const termHeight = useTerminalHeight();
+
+  // Calculate how many agent log lines we can fit.
+  // Fixed lines: header border(3) + stats(2) + progress(1) + blank(1) + task(1)
+  //   + status row(1) + agent header(1) + separator(1) + spinner(1) = ~12
+  // Quality gates take variable lines.
+  const gateLines = state.qualityReport ? state.qualityReport.results.length + 1 : 0;
+  const fixedLines = 12 + gateLines;
+  const availableForLog = Math.max(2, termHeight - fixedLines);
+
   return (
-    <Box flexDirection="column" paddingX={1}>
+    <Box flexDirection="column" paddingX={1} height={termHeight}>
       <Header state={state.loop} startedAt={startedAt} />
       <CurrentTask name={state.currentTask} />
       <StatusRow
@@ -251,7 +275,7 @@ function Dashboard({ state, startedAt }: { state: DashboardState; startedAt: num
         commitCount={state.commitCount}
       />
       <QualityGatesPanel result={state.qualityReport} />
-      <AgentLog entries={state.agentLog} />
+      <AgentLog entries={state.agentLog} maxEntries={availableForLog} />
       <Box marginTop={1}>
         <Text color="gray">{"─".repeat(50)}</Text>
       </Box>
