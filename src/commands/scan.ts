@@ -7,7 +7,6 @@
 import { z } from "zod";
 import type { PrdTask } from "../prd/parser.js";
 import { ClaudeCodeExecutor } from "../loop/executor.js";
-import type { ClaudeResponse } from "../loop/orchestrator.js";
 
 /** Assessment result for a single task */
 export interface ScanResult {
@@ -83,8 +82,7 @@ and Read to verify implementation details. Focus on acceptance criteria.`;
     }
 
     // Parse results from Claude's output
-    const resultText = extractResultText(response);
-    const results = parseScanResponse(resultText);
+    const results = parseScanResponse(response.resultText ?? "");
 
     const tasksMarkedDone = results.filter(
       (r) => r.status === "done" && r.confidence >= CONFIDENCE_THRESHOLD
@@ -136,13 +134,6 @@ Rules:
 - confidence: 0.9+ for clear matches, 0.5-0.9 for uncertain, below 0.5 for guesses
 - Only mark "done" with confidence >= 0.8
 - Output valid JSON array between the markers`;
-}
-
-/** Extract the result text from Claude's response */
-function extractResultText(response: ClaudeResponse): string {
-  // The error field sometimes contains the full result text
-  // Stringify the whole response so we can search for markers
-  return JSON.stringify(response);
 }
 
 /**

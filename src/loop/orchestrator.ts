@@ -47,6 +47,8 @@ export interface ClaudeResponse {
   testsPass: boolean;
   testResults: { total: number; passed: number; failed: number };
   error: string | null;
+  /** Raw result text from Claude CLI output */
+  resultText?: string;
 }
 
 /** Options for creating a LoopOrchestrator */

@@ -97,8 +97,7 @@ Be precise about commands — read package.json scripts, pyproject.toml tool sec
       };
     }
 
-    const resultText = JSON.stringify(response);
-    const workspaces = parseWorkspaceScanResponse(resultText);
+    const workspaces = parseWorkspaceScanResponse(response.resultText ?? "");
 
     return { workspaces };
   } catch (err) {
