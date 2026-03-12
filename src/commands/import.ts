@@ -6,14 +6,19 @@ import {
   copyFileSync,
 } from "fs";
 import { join, basename, extname } from "path";
-import { parsePrd, TaskPriority, type Prd } from "../prd/parser.js";
+import { parsePrd, TaskPriority, TaskStatus, type Prd } from "../prd/parser.js";
 import { FORGE_DIR } from "../config/loader.js";
+import { scanTasks, shouldMarkDone, type ScanResult } from "./scan.js";
 
 export interface ImportResult {
   success: boolean;
   tasksImported: number;
   priorities: { critical: number; high: number; medium: number; low: number };
   error?: string;
+  /** Scan results when --scan is used */
+  scanResults?: ScanResult[];
+  /** Number of tasks pre-marked as done by scan */
+  tasksPreMarkedDone?: number;
 }
 
 /**
@@ -113,6 +118,76 @@ export function importPrd(filePath: string, projectRoot: string): ImportResult {
     success: true,
     tasksImported: prd.tasks.length,
     priorities,
+  };
+}
+
+/**
+ * Import a PRD with codebase scanning to pre-mark implemented tasks.
+ *
+ * 1. Runs normal import (parse, write tasks.md, prd.json)
+ * 2. Spawns Claude Code in read-only mode to assess each task
+ * 3. Marks tasks with high-confidence "done" assessments
+ * 4. Re-writes prd.json and tasks.md with updated statuses
+ */
+export async function importPrdWithScan(
+  filePath: string,
+  projectRoot: string,
+  options?: { verbose?: boolean; timeout?: number }
+): Promise<ImportResult> {
+  // Step 1: Normal import
+  const result = importPrd(filePath, projectRoot);
+  if (!result.success) return result;
+
+  // Step 2: Scan codebase
+  const forgeDir = join(projectRoot, FORGE_DIR);
+  const prdJsonPath = join(forgeDir, "prd.json");
+  const prdData = JSON.parse(readFileSync(prdJsonPath, "utf-8"));
+
+  const scanOutcome = await scanTasks(prdData.tasks, projectRoot, options);
+
+  if (scanOutcome.error || scanOutcome.results.length === 0) {
+    return {
+      ...result,
+      scanResults: scanOutcome.results,
+      tasksPreMarkedDone: 0,
+    };
+  }
+
+  // Step 3: Mark done tasks
+  let markedCount = 0;
+  for (const scanResult of scanOutcome.results) {
+    if (!shouldMarkDone(scanResult)) continue;
+
+    const task = prdData.tasks.find(
+      (t: { id: string }) => t.id === scanResult.taskId
+    );
+    if (task) {
+      task.status = TaskStatus.Done;
+      markedCount++;
+    }
+  }
+
+  // Step 4: Re-write files with updated statuses
+  if (markedCount > 0) {
+    writeFileSync(prdJsonPath, JSON.stringify(prdData, null, 2) + "\n");
+
+    const prd = parsePrd(readFileSync(filePath, "utf-8"), basename(filePath));
+    // Update prd task statuses to match
+    for (const task of prd.tasks) {
+      const updated = prdData.tasks.find(
+        (t: { id: string; status: string }) => t.id === task.id
+      );
+      if (updated?.status === "done") {
+        task.status = TaskStatus.Done;
+      }
+    }
+    writeFileSync(join(forgeDir, "tasks.md"), generateTasksMarkdown(prd));
+  }
+
+  return {
+    ...result,
+    scanResults: scanOutcome.results,
+    tasksPreMarkedDone: markedCount,
   };
 }
 

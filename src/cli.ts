@@ -363,11 +363,22 @@ program
 program
   .command("import <file>")
   .description("Import a PRD from a file (Markdown, JSON, or text)")
-  .action(async (file: string) => {
+  .option("--scan", "Scan codebase to pre-mark implemented tasks as done")
+  .option("-v, --verbose", "Show detailed scan output")
+  .action(async (file: string, options: { scan?: boolean; verbose?: boolean }) => {
     const cwd = process.cwd();
     console.log(chalk.cyan(`Importing PRD from ${file}...`));
 
-    const result = importPrd(resolve(cwd, file), cwd);
+    let result;
+    if (options.scan) {
+      const { importPrdWithScan } = await import("./commands/import.js");
+      console.log(chalk.gray("  Scanning codebase for existing implementations..."));
+      result = await importPrdWithScan(resolve(cwd, file), cwd, {
+        verbose: options.verbose,
+      });
+    } else {
+      result = importPrd(resolve(cwd, file), cwd);
+    }
 
     if (!result.success) {
       console.error(chalk.red(`Error: ${result.error}`));
@@ -384,6 +395,27 @@ program
       console.log(`  Medium:   ${priorities.medium}`);
     if (priorities.low > 0)
       console.log(chalk.gray(`  Low:      ${priorities.low}`));
+
+    // Show scan results
+    if (result.scanResults && result.scanResults.length > 0) {
+      console.log("");
+      for (const sr of result.scanResults) {
+        const pct = Math.round(sr.confidence * 100);
+        if (sr.status === "done" && sr.confidence >= 0.8) {
+          console.log(chalk.green(`  [${sr.taskId}] ${sr.evidence} — done (${pct}%)`));
+        } else if (sr.status === "partial") {
+          console.log(chalk.yellow(`  [${sr.taskId}] ${sr.evidence} — partial (${pct}%, skipped)`));
+        } else if (sr.status === "done" && sr.confidence < 0.8) {
+          console.log(chalk.yellow(`  [${sr.taskId}] ${sr.evidence} — done but low confidence (${pct}%, skipped)`));
+        }
+      }
+      if (result.tasksPreMarkedDone && result.tasksPreMarkedDone > 0) {
+        console.log(
+          chalk.green(`\n  Pre-marked ${result.tasksPreMarkedDone} of ${result.tasksImported} tasks as done.`)
+        );
+      }
+    }
+
     console.log(
       `\nTasks written to ${chalk.bold(".forge/tasks.md")} and ${chalk.bold(".forge/prd.json")}`
     );
