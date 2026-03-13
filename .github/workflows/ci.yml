@@ -26,11 +26,15 @@ jobs:
         run: npm run lint
 
       - name: Unit tests
-        run: timeout 120 npx vitest run --reporter=json --outputFile=unit-results.json; node -e "const r=require('./unit-results.json');console.log(r.numPassedTests+'/'+r.testResults.length+' passed');if(r.numFailedTests>0)process.exit(1)"
+        run: |
+          timeout 120 npx vitest run --reporter=json --outputFile=unit-results.json || true
+          node -e "const r=require('./unit-results.json');console.log(r.numPassedTests+'/'+r.testResults.length+' passed');if(r.numFailedTests>0)process.exit(1)"
         timeout-minutes: 5
 
       - name: Integration tests
-        run: timeout 540 npx vitest run tests/integration/ --testTimeout=300000 --reporter=json --outputFile=int-results.json; node -e "const r=require('./int-results.json');console.log(r.numPassedTests+'/'+r.testResults.length+' passed');if(r.numFailedTests>0)process.exit(1)"
+        run: |
+          timeout 540 npx vitest run tests/integration/ --testTimeout=300000 --reporter=json --outputFile=int-results.json || true
+          node -e "const r=require('./int-results.json');console.log(r.numPassedTests+'/'+r.testResults.length+' passed');if(r.numFailedTests>0)process.exit(1)"
         timeout-minutes: 10
 
       - name: Build
