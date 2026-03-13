@@ -74,7 +74,7 @@ const SAST_RULES: SastRule[] = [
   {
     type: VulnerabilityType.CommandInjection,
     severity: Severity.Critical,
-    pattern: /(?:exec|execSync|spawn)\s*\(\s*(?:`[^`]*\$\{|["'][^"']*\"\s*\+)/,
+    pattern: /(?:exec|execSync|spawn)\s*\(\s*(?:`[^`]*\$\{|["'][^"']*"\s*\+)/,
     description: "Shell command built with dynamic input",
     remediation: "Use execFile/spawnSync with argument arrays instead of string commands",
   },
