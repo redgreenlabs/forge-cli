@@ -282,9 +282,9 @@ describe("Full Pipeline Integration", () => {
     const runCtx = prepareRunContext(tmpDir);
     const { executor } = createMockExecutor(tmpDir);
 
-    // First run — 2 iterations, should complete task-1
+    // First run — 1 iteration, should complete task-1 only
     const runner1 = new LoopRunner({
-      config: { ...defaultConfig, maxIterations: 2, retry: { maxPhaseRetries: 0, retryDelayMs: 0 } },
+      config: { ...defaultConfig, maxIterations: 1, retry: { maxPhaseRetries: 0, retryDelayMs: 0 } },
       executor,
       tasks: runCtx.tasks,
       projectRoot: tmpDir,
@@ -292,7 +292,7 @@ describe("Full Pipeline Integration", () => {
     });
 
     const result1 = await runner1.run();
-    expect(result1.iterations).toBe(2);
+    expect(result1.iterations).toBe(1);
 
     // Context file should exist
     const contextPath = join(tmpDir, ".forge", "context.json");
@@ -334,7 +334,12 @@ describe("Full Pipeline Integration", () => {
     };
 
     const runner = new LoopRunner({
-      config: { ...defaultConfig, maxIterations: 5, retry: { maxPhaseRetries: 0, retryDelayMs: 0 } },
+      config: {
+        ...defaultConfig,
+        maxIterations: 5,
+        retry: { maxPhaseRetries: 0, retryDelayMs: 0 },
+        circuitBreaker: { ...defaultConfig.circuitBreaker, sameErrorThreshold: 2 },
+      },
       executor: failingExecutor,
       tasks: runCtx.tasks,
       projectRoot: tmpDir,
@@ -343,8 +348,9 @@ describe("Full Pipeline Integration", () => {
 
     const result = await runner.run();
 
-    // Should not crash, circuit breaker should eventually trip
+    // Should not crash, circuit breaker should trip after 2 same errors
     expect(result.errors.length).toBeGreaterThan(0);
+    expect(result.stopReason).toBe("circuit_breaker_open");
   });
 
   it("should show current task in dashboard updates", async () => {
