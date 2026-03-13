@@ -20,8 +20,6 @@ export default defineConfig({
       },
     },
     testTimeout: 10000,
-    teardownTimeout: 1000,
-    pool: "forks",
   },
   resolve: {
     alias: {

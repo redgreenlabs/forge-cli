@@ -26,27 +26,11 @@ jobs:
         run: npm run lint
 
       - name: Unit tests
-        run: |
-          timeout 120 npx vitest run --reporter=verbose 2>&1 | tee test-output.txt || true
-          if grep -q "Tests.*failed" test-output.txt; then
-            echo "Tests failed"
-            exit 1
-          fi
-          if grep -q "no tests" test-output.txt; then
-            echo "No tests found"
-            exit 1
-          fi
-          echo "Tests passed"
+        run: npm test
         timeout-minutes: 5
 
       - name: Integration tests
-        run: |
-          timeout 540 npx vitest run tests/integration/ --testTimeout=300000 --reporter=verbose 2>&1 | tee int-output.txt || true
-          if grep -q "Tests.*failed" int-output.txt; then
-            echo "Integration tests failed"
-            exit 1
-          fi
-          echo "Integration tests passed"
+        run: npm run test:integration
         timeout-minutes: 10
 
       - name: Build
