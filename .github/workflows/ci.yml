@@ -30,10 +30,11 @@ jobs:
         run: npm run lint
 
       - name: Unit tests
-        run: npm test
+        run: node --max-old-space-size=4096 ./node_modules/.bin/vitest run
+        timeout-minutes: 5
 
       - name: Integration tests
-        run: npm run test:integration
+        run: node --max-old-space-size=4096 ./node_modules/.bin/vitest run tests/integration/ --testTimeout=300000
         timeout-minutes: 10
 
       - name: Build
