@@ -26,16 +26,12 @@ jobs:
         run: npm run lint
 
       - name: Unit tests
-        run: npx vitest run --pool=forks --reporter=verbose
+        run: npm test
         timeout-minutes: 5
-        env:
-          CI: true
 
       - name: Integration tests
-        run: npx vitest run tests/integration/ --pool=forks --testTimeout=300000 --reporter=verbose
+        run: npm run test:integration
         timeout-minutes: 10
-        env:
-          CI: true
 
       - name: Build
         run: npm run build
