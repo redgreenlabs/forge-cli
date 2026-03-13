@@ -10,6 +10,25 @@ import { LoopPhase } from "../../src/loop/engine.js";
 import { TddPhase } from "../../src/tdd/enforcer.js";
 import { TaskStatus, TaskPriority } from "../../src/prd/parser.js";
 
+// Mock modules that spawn child processes (quality gates run `npm test`, `npm run lint`, etc.)
+vi.mock("../../src/loop/phase-impl.js", () => ({
+  scanFilesForSecurity: vi.fn().mockReturnValue({ passed: true, findings: [] }),
+  runQualityGates: vi.fn().mockResolvedValue({
+    passed: true,
+    results: [],
+    summary: { total: 0, passed: 0, failed: 0, warnings: 0, errors: 0 },
+    totalDurationMs: 0,
+  }),
+  commitPhase: vi.fn().mockResolvedValue({ committed: true, message: "mock commit" }),
+}));
+vi.mock("../../src/gates/plugin.js", () => ({
+  GatePluginRegistry: class MockRegistry {
+    register() {}
+    toGateDefinitions() { return []; }
+  },
+  createBuiltinGates: vi.fn().mockReturnValue([]),
+}));
+
 function makeClaudeResponse(overrides: Partial<ClaudeResponse> = {}): ClaudeResponse {
   return {
     status: "success",
@@ -49,6 +68,33 @@ describe("LoopOrchestrator", () => {
           acceptanceCriteria: ["Tests pass"],
           dependsOn: [],
         },
+        {
+          id: "task-2",
+          title: "Add error handling",
+          status: TaskStatus.Pending,
+          priority: TaskPriority.High,
+          category: "features",
+          acceptanceCriteria: ["Error cases covered"],
+          dependsOn: ["task-1"],
+        },
+        {
+          id: "task-3",
+          title: "Write integration tests",
+          status: TaskStatus.Pending,
+          priority: TaskPriority.Medium,
+          category: "testing",
+          acceptanceCriteria: ["Integration tests pass"],
+          dependsOn: ["task-2"],
+        },
+        {
+          id: "task-4",
+          title: "Add documentation",
+          status: TaskStatus.Pending,
+          priority: TaskPriority.Low,
+          category: "docs",
+          acceptanceCriteria: ["Docs complete"],
+          dependsOn: ["task-3"],
+        },
       ],
       onDashboardUpdate,
       ...overrides,
@@ -64,7 +110,7 @@ describe("LoopOrchestrator", () => {
 
     it("should track total tasks", () => {
       const orch = createOrchestrator();
-      expect(orch.state.totalTasks).toBe(1);
+      expect(orch.state.totalTasks).toBe(4);
     });
   });
 
@@ -135,9 +181,12 @@ describe("LoopOrchestrator", () => {
       };
       const orch = createOrchestrator({ executor: completingExecutor });
 
-      // Mark task complete after first iteration
+      // Mark all tasks complete after first iteration
       await orch.runIteration();
       orch.markTaskComplete("task-1");
+      orch.markTaskComplete("task-2");
+      orch.markTaskComplete("task-3");
+      orch.markTaskComplete("task-4");
 
       expect(orch.shouldStop()).toBe(true);
     });

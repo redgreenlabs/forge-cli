@@ -11,6 +11,25 @@ import { TaskStatus, TaskPriority } from "../../src/prd/parser.js";
 import { TddPhase } from "../../src/tdd/enforcer.js";
 import { LoopPhase } from "../../src/loop/engine.js";
 
+// Mock modules that spawn child processes (quality gates run `npm test`, `npm run lint`, etc.)
+vi.mock("../../src/loop/phase-impl.js", () => ({
+  scanFilesForSecurity: vi.fn().mockReturnValue({ passed: true, findings: [] }),
+  runQualityGates: vi.fn().mockResolvedValue({
+    passed: true,
+    results: [],
+    summary: { total: 0, passed: 0, failed: 0, warnings: 0, errors: 0 },
+    totalDurationMs: 0,
+  }),
+  commitPhase: vi.fn().mockResolvedValue({ committed: true, message: "mock commit" }),
+}));
+vi.mock("../../src/gates/plugin.js", () => ({
+  GatePluginRegistry: class MockRegistry {
+    register() {}
+    toGateDefinitions() { return []; }
+  },
+  createBuiltinGates: vi.fn().mockReturnValue([]),
+}));
+
 function makeClaudeResponse(overrides: Partial<ClaudeResponse> = {}): ClaudeResponse {
   return {
     status: "success",

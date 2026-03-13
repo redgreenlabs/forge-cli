@@ -10,6 +10,33 @@ import {
 import { defaultConfig } from "../../src/config/schema.js";
 import { TaskStatus, TaskPriority } from "../../src/prd/parser.js";
 
+// Mock modules that spawn child processes (quality gates run `npm test`, `npm run lint`, etc.)
+vi.mock("../../src/loop/phase-impl.js", () => ({
+  scanFilesForSecurity: vi.fn().mockReturnValue({ passed: true, findings: [] }),
+  runQualityGates: vi.fn().mockResolvedValue({
+    passed: true,
+    results: [],
+    summary: { total: 0, passed: 0, failed: 0, warnings: 0, errors: 0 },
+    totalDurationMs: 0,
+  }),
+  commitPhase: vi.fn().mockResolvedValue({ committed: true, message: "mock commit" }),
+}));
+vi.mock("../../src/gates/plugin.js", () => ({
+  GatePluginRegistry: class MockRegistry {
+    register() {}
+    toGateDefinitions() { return []; }
+  },
+  createBuiltinGates: vi.fn().mockReturnValue([]),
+}));
+
+/** Safe config that disables security and retries for unit tests */
+const safeConfig = {
+  ...defaultConfig,
+  tdd: { ...defaultConfig.tdd, commitPerPhase: false },
+  security: { ...defaultConfig.security, enabled: false },
+  retry: { maxPhaseRetries: 0, retryDelayMs: 0 },
+};
+
 function mockExecutor(responses: Array<Partial<import("../../src/loop/orchestrator.js").ClaudeResponse>> = []) {
   let callCount = 0;
   return {
@@ -48,13 +75,31 @@ const sampleTasks = [
     acceptanceCriteria: [],
     dependsOn: ["t1"],
   },
+  {
+    id: "t3",
+    title: "Add documentation",
+    status: TaskStatus.Pending,
+    priority: TaskPriority.Medium,
+    category: "",
+    acceptanceCriteria: [],
+    dependsOn: ["t2"],
+  },
+  {
+    id: "t4",
+    title: "Final review",
+    status: TaskStatus.Pending,
+    priority: TaskPriority.Low,
+    category: "",
+    acceptanceCriteria: [],
+    dependsOn: ["t3"],
+  },
 ];
 
 describe("LoopRunner", () => {
   describe("run", () => {
     it("should execute iterations up to max", async () => {
       const runner = new LoopRunner({
-        config: { ...defaultConfig, maxIterations: 3 },
+        config: { ...safeConfig, maxIterations: 3 },
         executor: mockExecutor(),
         tasks: sampleTasks,
       });
@@ -66,7 +111,7 @@ describe("LoopRunner", () => {
 
     it("should report tasks completed", async () => {
       const runner = new LoopRunner({
-        config: { ...defaultConfig, maxIterations: 5 },
+        config: { ...safeConfig, maxIterations: 5 },
         executor: mockExecutor([
           { exitSignal: false },
           { exitSignal: true },
@@ -95,7 +140,7 @@ describe("LoopRunner", () => {
       };
 
       const runner = new LoopRunner({
-        config: { ...defaultConfig, maxIterations: 100 },
+        config: { ...safeConfig, maxIterations: 100 },
         executor: slowExecutor,
         tasks: sampleTasks,
       });
@@ -109,7 +154,7 @@ describe("LoopRunner", () => {
     it("should collect dashboard snapshots", async () => {
       const snapshots: unknown[] = [];
       const runner = new LoopRunner({
-        config: { ...defaultConfig, maxIterations: 2 },
+        config: { ...safeConfig, maxIterations: 2 },
         executor: mockExecutor(),
         tasks: sampleTasks,
         onDashboardUpdate: (state) => snapshots.push(state),
@@ -121,7 +166,7 @@ describe("LoopRunner", () => {
 
     it("should return timing information", async () => {
       const runner = new LoopRunner({
-        config: { ...defaultConfig, maxIterations: 1 },
+        config: { ...safeConfig, maxIterations: 1 },
         executor: mockExecutor(),
         tasks: sampleTasks,
       });
@@ -136,7 +181,7 @@ describe("LoopRunner", () => {
         execute: vi.fn().mockRejectedValue(new Error("Claude crashed")),
       };
       const runner = new LoopRunner({
-        config: { ...defaultConfig, maxIterations: 5 },
+        config: { ...safeConfig, maxIterations: 5 },
         executor: failExecutor,
         tasks: sampleTasks,
       });
@@ -160,7 +205,7 @@ describe("LoopRunner", () => {
 
     it("should create log file in .forge/logs", async () => {
       const runner = new LoopRunner({
-        config: { ...defaultConfig, maxIterations: 1 },
+        config: { ...safeConfig, maxIterations: 1 },
         executor: mockExecutor(),
         tasks: [sampleTasks[0]!],
         forgeDir: tmpDir,
@@ -191,7 +236,7 @@ describe("LoopRunner", () => {
 
     it("should log start and end entries", async () => {
       const runner = new LoopRunner({
-        config: { ...defaultConfig, maxIterations: 1 },
+        config: { ...safeConfig, maxIterations: 1 },
         executor: mockExecutor(),
         tasks: [sampleTasks[0]!],
         forgeDir: tmpDir,
@@ -224,7 +269,7 @@ describe("LoopRunner", () => {
 
     it("should persist completed task IDs in context file", async () => {
       const runner = new LoopRunner({
-        config: { ...defaultConfig, maxIterations: 5 },
+        config: { ...safeConfig, maxIterations: 5 },
         executor: mockExecutor(),
         tasks: [sampleTasks[0]!],
         forgeDir: tmpDir,
@@ -243,7 +288,7 @@ describe("LoopRunner", () => {
     it("should skip completed tasks on resume", async () => {
       // First run — complete task t1
       const runner1 = new LoopRunner({
-        config: { ...defaultConfig, maxIterations: 5 },
+        config: { ...safeConfig, maxIterations: 5 },
         executor: mockExecutor(),
         tasks: [sampleTasks[0]!],
         forgeDir: tmpDir,
@@ -253,7 +298,7 @@ describe("LoopRunner", () => {
       // Second run with resume — t1 should already be marked done
       const executor2 = mockExecutor();
       const runner2 = new LoopRunner({
-        config: { ...defaultConfig, maxIterations: 2 },
+        config: { ...safeConfig, maxIterations: 2 },
         executor: executor2,
         tasks: sampleTasks,
         forgeDir: tmpDir,
@@ -282,7 +327,7 @@ describe("LoopRunner", () => {
       );
 
       const runner = new LoopRunner({
-        config: { ...defaultConfig, maxIterations: 5 },
+        config: { ...safeConfig, maxIterations: 5 },
         executor: mockExecutor(),
         tasks: [sampleTasks[0]!],
         forgeDir: tmpDir,
@@ -308,7 +353,7 @@ describe("LoopRunner", () => {
       );
 
       const runner = new LoopRunner({
-        config: { ...defaultConfig, maxIterations: 5 },
+        config: { ...safeConfig, maxIterations: 5 },
         executor: mockExecutor(),
         tasks: [sampleTasks[0]!],
         forgeDir: tmpDir,

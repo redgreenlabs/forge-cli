@@ -8,7 +8,7 @@
  * Validates: task selection → agent assignment → TDD phases →
  * security scan → quality gates → git commits → resume → logs.
  */
-import { describe, it, expect, beforeEach, afterEach } from "vitest";
+import { describe, it, expect, vi, beforeEach, afterEach } from "vitest";
 import {
   mkdtempSync,
   rmSync,
@@ -26,6 +26,27 @@ import { prepareRunContext } from "../../src/commands/run.js";
 import { LoopRunner } from "../../src/loop/runner.js";
 import { defaultConfig, type ForgeConfig } from "../../src/config/schema.js";
 import type { ClaudeExecutor, ClaudeResponse, DashboardState } from "../../src/loop/orchestrator.js";
+
+// Mock modules that spawn child processes (quality gates run `npm test`, `npm run lint`, etc.)
+vi.mock("../../src/loop/phase-impl.js", async (importOriginal) => {
+  const orig = await importOriginal<typeof import("../../src/loop/phase-impl.js")>();
+  return {
+    ...orig,
+    runQualityGates: vi.fn().mockResolvedValue({
+      passed: true,
+      results: [],
+      summary: { total: 0, passed: 0, failed: 0, warnings: 0, errors: 0 },
+      totalDurationMs: 0,
+    }),
+  };
+});
+vi.mock("../../src/gates/plugin.js", () => ({
+  GatePluginRegistry: class MockRegistry {
+    register() {}
+    toGateDefinitions() { return []; }
+  },
+  createBuiltinGates: vi.fn().mockReturnValue([]),
+}));
 
 /** Build a realistic Claude JSON response with tool_use entries */
 function buildClaudeResponse(opts: {
