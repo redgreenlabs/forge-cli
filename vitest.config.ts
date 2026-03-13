@@ -20,10 +20,14 @@ export default defineConfig({
       },
     },
     testTimeout: 10000,
-    teardownTimeout: 5000,
+    teardownTimeout: 1000,
     pool: "forks",
-    maxConcurrency: 2,
-    fileParallelism: false,
+    poolOptions: {
+      forks: {
+        singleFork: false,
+        maxForks: 2,
+      },
+    },
   },
   resolve: {
     alias: {
