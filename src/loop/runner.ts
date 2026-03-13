@@ -31,6 +31,12 @@ export interface RunResult {
   durationMs: number;
   startedAt: number;
   errors: string[];
+  /** Last quality gate report (if available) */
+  lastQualityReport?: import("../gates/quality-gates.js").PipelineResult;
+  /** Recent agent activity log entries */
+  recentLog: import("../tui/renderer.js").AgentLogEntry[];
+  /** Path to the full log file */
+  logFile?: string;
 }
 
 /**
@@ -177,6 +183,9 @@ export class LoopRunner {
       durationMs: Date.now() - this.startedAt,
       startedAt: this.startedAt,
       errors: [...this.errors],
+      lastQualityReport: this.orchestrator.qualityReport,
+      recentLog: this.orchestrator.agentLog.slice(-20),
+      logFile: this.logFilePath ?? undefined,
     };
   }
 

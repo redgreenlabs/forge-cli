@@ -387,6 +387,37 @@ program
           console.log(chalk.red(`    - ${err}`));
         }
       }
+
+      // Detailed quality gate report on failure
+      if (result.lastQualityReport && !result.lastQualityReport.passed) {
+        console.log(chalk.bold.yellow("\n  Last Quality Gate Report:"));
+        for (const gate of result.lastQualityReport.results) {
+          const icon = gate.status === "passed" ? chalk.green("✓")
+            : gate.status === "failed" ? chalk.red("✗")
+            : chalk.yellow("⚠");
+          const msg = gate.message.length > 80
+            ? gate.message.slice(0, 77) + "..."
+            : gate.message;
+          console.log(`    ${icon} ${gate.name.padEnd(28)} ${msg}`);
+        }
+      }
+
+      // Recent agent activity for context
+      if (result.recentLog.length > 0) {
+        console.log(chalk.bold.cyan("\n  Recent Activity:"));
+        const tail = result.recentLog.slice(-10);
+        for (const entry of tail) {
+          const time = new Date(entry.timestamp).toLocaleTimeString();
+          console.log(
+            `    ${chalk.gray(time)} ${chalk.white(`[${entry.agent}]`.padEnd(16))} ${entry.action} ${chalk.gray(entry.detail)}`
+          );
+        }
+      }
+
+      // Point to full log file
+      if (result.logFile) {
+        console.log(chalk.gray(`\n  Full log: ${result.logFile}`));
+      }
     } finally {
       // Safety net: unmount Ink if still alive
       if (inkCleanup) inkCleanup();
