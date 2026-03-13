@@ -12,6 +12,7 @@
     "build": "tsup",
     "dev": "tsup --watch",
     "test": "vitest run",
+    "test:integration": "vitest run tests/integration/ --testTimeout=300000",
     "test:smoke": "SMOKE=1 vitest run tests/integration/cli-smoke.test.ts",
     "test:watch": "vitest",
     "test:coverage": "vitest run --coverage",
