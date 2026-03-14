@@ -196,7 +196,7 @@ export function validateCommitMessage(message: string): CommitValidation {
     };
   }
 
-  if (!VALID_TYPES.has(parsed.type as any)) {
+  if (!VALID_TYPES.has(parsed.type as CommitType)) {
     errors.push(`Unknown commit type: ${parsed.type}`);
   }
 

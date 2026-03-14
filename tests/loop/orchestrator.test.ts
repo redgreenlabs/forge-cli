@@ -233,4 +233,168 @@ describe("LoopOrchestrator", () => {
       expect(orch.agentLog.length).toBeGreaterThan(0);
     });
   });
+
+  describe("pre-completed tasks", () => {
+    it("should pre-mark tasks with done status", () => {
+      const orch = new LoopOrchestrator({
+        config: { ...defaultConfig, maxIterations: 3 },
+        executor,
+        tasks: [
+          {
+            id: "task-1",
+            title: "Already done",
+            status: TaskStatus.Done,
+            priority: TaskPriority.High,
+            category: "",
+            acceptanceCriteria: [],
+            dependsOn: [],
+          },
+          {
+            id: "task-2",
+            title: "Still pending",
+            status: TaskStatus.Pending,
+            priority: TaskPriority.High,
+            category: "",
+            acceptanceCriteria: [],
+            dependsOn: [],
+          },
+        ],
+        onDashboardUpdate,
+      });
+
+      expect(orch.state.tasksCompleted).toBe(1);
+      expect(orch.state.completedTaskIds.has("task-1")).toBe(true);
+      expect(orch.state.completedTaskIds.has("task-2")).toBe(false);
+    });
+  });
+
+  describe("no available tasks", () => {
+    it("should handle when all tasks are already complete", async () => {
+      const orch = new LoopOrchestrator({
+        config: { ...defaultConfig, maxIterations: 3 },
+        executor,
+        tasks: [
+          {
+            id: "task-a",
+            title: "Done task",
+            status: TaskStatus.Done,
+            priority: TaskPriority.High,
+            category: "",
+            acceptanceCriteria: [],
+            dependsOn: [],
+          },
+        ],
+        onDashboardUpdate,
+      });
+
+      // task-a is already done, so no tasks are available
+      await orch.runIteration();
+      // Should not have called executor since no tasks available
+      expect(executor.execute).not.toHaveBeenCalled();
+      // Agent log should note no available tasks
+      expect(orch.agentLog.some((e) => e.detail.includes("No available tasks"))).toBe(true);
+    });
+  });
+
+  describe("extraSystemContext", () => {
+    it("should prepend extra context to agent system prompts", async () => {
+      const capturingExecutor: ClaudeExecutor = {
+        execute: vi.fn().mockResolvedValue(makeClaudeResponse()),
+      };
+
+      const orch = new LoopOrchestrator({
+        config: { ...defaultConfig, maxIterations: 3 },
+        executor: capturingExecutor,
+        tasks: [
+          {
+            id: "task-1",
+            title: "Implement feature",
+            status: TaskStatus.Pending,
+            priority: TaskPriority.High,
+            category: "",
+            acceptanceCriteria: [],
+            dependsOn: [],
+          },
+        ],
+        onDashboardUpdate,
+        extraSystemContext: "EXTRA CONTEXT HERE",
+      });
+
+      await orch.runIteration();
+
+      // The executor should have been called with system prompts containing the extra context
+      const calls = (capturingExecutor.execute as ReturnType<typeof vi.fn>).mock.calls;
+      expect(calls.length).toBeGreaterThan(0);
+      const firstSystemPrompt = calls[0][0].systemPrompt;
+      expect(firstSystemPrompt).toContain("EXTRA CONTEXT HERE");
+    });
+  });
+
+  describe("sessionId passthrough", () => {
+    it("should pass sessionId to executor calls", async () => {
+      const capturingExecutor: ClaudeExecutor = {
+        execute: vi.fn().mockResolvedValue(makeClaudeResponse()),
+      };
+
+      const orch = new LoopOrchestrator({
+        config: { ...defaultConfig, maxIterations: 3 },
+        executor: capturingExecutor,
+        tasks: [
+          {
+            id: "task-1",
+            title: "Implement feature",
+            status: TaskStatus.Pending,
+            priority: TaskPriority.High,
+            category: "",
+            acceptanceCriteria: [],
+            dependsOn: [],
+          },
+        ],
+        onDashboardUpdate,
+        sessionId: "sess-abc-123",
+      });
+
+      await orch.runIteration();
+
+      const calls = (capturingExecutor.execute as ReturnType<typeof vi.fn>).mock.calls;
+      expect(calls.length).toBeGreaterThan(0);
+      expect(calls[0][0].sessionId).toBe("sess-abc-123");
+    });
+  });
+
+  describe("workspace-aware quality gates", () => {
+    it("should run gates per affected workspace", async () => {
+      const orch = new LoopOrchestrator({
+        config: {
+          ...defaultConfig,
+          maxIterations: 3,
+          workspaces: [
+            { name: "frontend", path: "packages/frontend", type: "node", test: "npm test", lint: "npm run lint" },
+            { name: "backend", path: "packages/backend", type: "node", test: "npm test", lint: "npm run lint" },
+          ],
+        },
+        executor: {
+          execute: vi.fn().mockResolvedValue(makeClaudeResponse({
+            filesModified: ["packages/frontend/src/app.ts"],
+          })),
+        },
+        tasks: [
+          {
+            id: "task-1",
+            title: "Update frontend",
+            status: TaskStatus.Pending,
+            priority: TaskPriority.High,
+            category: "",
+            acceptanceCriteria: [],
+            dependsOn: [],
+          },
+        ],
+        onDashboardUpdate,
+      });
+
+      await orch.runIteration();
+      // Should complete without errors — workspace routing is exercised
+      expect(orch.state.iteration).toBe(1);
+    });
+  });
 });

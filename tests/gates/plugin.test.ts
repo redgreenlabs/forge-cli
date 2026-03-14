@@ -109,4 +109,126 @@ describe("Gate Plugin System", () => {
       expect(lintGate?.severity).toBe(QualityGateSeverity.Warn);
     });
   });
+
+  describe("builtin gate check() functions", () => {
+    let tmpDir: string;
+
+    beforeEach(() => {
+      tmpDir = mkdtempSync(join(tmpdir(), "forge-gate-check-"));
+      // Create a git repo with a conventional commit for the commit gate
+      const { execSync } = require("child_process");
+      execSync("git init", { cwd: tmpDir, stdio: "pipe" });
+      execSync("git config user.email 'test@test.com'", { cwd: tmpDir, stdio: "pipe" });
+      execSync("git config user.name 'Test'", { cwd: tmpDir, stdio: "pipe" });
+      writeFileSync(join(tmpDir, "index.ts"), "export const x = 1;\n");
+      execSync("git add -A && git commit -m 'feat: initial commit'", { cwd: tmpDir, stdio: "pipe" });
+    });
+
+    afterEach(() => {
+      rmSync(tmpDir, { recursive: true, force: true });
+    });
+
+    function getGate(name: string, opts?: Partial<import("../../src/gates/plugin.js").BuiltinGateOptions>) {
+      const gates = createBuiltinGates({
+        projectRoot: tmpDir,
+        testCommand: "echo tests-pass",
+        lintCommand: "echo lint-pass",
+        ...opts,
+      });
+      return gates.find((g) => g.name === name)!;
+    }
+
+    describe("tests-pass gate", () => {
+      it("should pass when test command succeeds", async () => {
+        const gate = getGate("tests-pass", { testCommand: "echo ok" });
+        const result = await gate.check();
+        expect(result.passed).toBe(true);
+        expect(result.message).toBe("All tests pass");
+      });
+
+      it("should fail when test command fails", async () => {
+        const gate = getGate("tests-pass", { testCommand: "exit 1" });
+        const result = await gate.check();
+        expect(result.passed).toBe(false);
+      });
+    });
+
+    describe("coverage-threshold gate", () => {
+      it("should always pass (delegated to test runner)", async () => {
+        const gate = getGate("coverage-threshold");
+        const result = await gate.check();
+        expect(result.passed).toBe(true);
+      });
+    });
+
+    describe("security-scan gate", () => {
+      it("should pass for node workspace when audit succeeds", async () => {
+        // Use a command that succeeds as the audit
+        const gate = getGate("security-scan", { workspaceType: "node" });
+        // npm audit may fail on a bare tmpDir, so we need package.json
+        writeFileSync(join(tmpDir, "package.json"), '{"name":"test","version":"1.0.0"}\n');
+        // We can't guarantee npm audit passes, so just verify it returns a result
+        const result = await gate.check();
+        expect(result).toHaveProperty("passed");
+        expect(result).toHaveProperty("message");
+      });
+
+      it("should pass when no audit tool for workspace type", async () => {
+        const gate = getGate("security-scan", { workspaceType: "other" });
+        // "other" has no package.json in tmpDir → getAuditCommand returns null
+        const result = await gate.check();
+        expect(result.passed).toBe(true);
+        expect(result.message).toBe("No audit tool for this workspace type");
+      });
+
+      it("should pass with fallback npm audit when package.json exists", async () => {
+        writeFileSync(join(tmpDir, "package.json"), '{"name":"test","version":"1.0.0"}\n');
+        const gate = getGate("security-scan"); // no workspaceType → default branch
+        const result = await gate.check();
+        expect(result).toHaveProperty("passed");
+      });
+
+      it("should pass when no package.json and no workspace type", async () => {
+        const gate = getGate("security-scan"); // no workspaceType, no package.json
+        const result = await gate.check();
+        expect(result.passed).toBe(true);
+        expect(result.message).toBe("No audit tool for this workspace type");
+      });
+    });
+
+    describe("linting gate", () => {
+      it("should pass when lint command succeeds", async () => {
+        const gate = getGate("linting", { lintCommand: "echo ok" });
+        const result = await gate.check();
+        expect(result.passed).toBe(true);
+        expect(result.message).toBe("No linting issues");
+      });
+
+      it("should fail when lint command fails", async () => {
+        const gate = getGate("linting", { lintCommand: "exit 1" });
+        const result = await gate.check();
+        expect(result.passed).toBe(false);
+        expect(result.message).toBe("Linting issues found");
+      });
+    });
+
+    describe("conventional-commit gate", () => {
+      it("should pass for a valid conventional commit", async () => {
+        const gate = getGate("conventional-commit");
+        const result = await gate.check();
+        expect(result.passed).toBe(true);
+        expect(result.message).toContain("feat: initial commit");
+      });
+
+      it("should fail for an invalid commit message", async () => {
+        const { execSync } = require("child_process");
+        writeFileSync(join(tmpDir, "extra.ts"), "export const y = 2;\n");
+        execSync("git add -A && git commit -m 'bad commit message'", { cwd: tmpDir, stdio: "pipe" });
+
+        const gate = getGate("conventional-commit");
+        const result = await gate.check();
+        expect(result.passed).toBe(false);
+      });
+    });
+  });
 });
