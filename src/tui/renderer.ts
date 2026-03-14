@@ -30,6 +30,15 @@ export interface CoverageMetrics {
   trend: "up" | "down" | "stable";
 }
 
+/** Code quality metrics for display */
+export interface CodeQualityMetrics {
+  testRatio: number;
+  sourceFiles: number;
+  testFiles: number;
+  averageComplexity: number;
+  highComplexityCount: number;
+}
+
 /** Agent activity log entry */
 export interface AgentLogEntry {
   timestamp: number;
@@ -197,6 +206,34 @@ export function renderSecurity(metrics: SecurityMetrics): string {
 }
 
 /**
+ * Render code quality metrics panel (complexity + test ratio).
+ */
+export function renderCodeMetrics(metrics: CodeQualityMetrics): string {
+  const ratioColor = (r: number) =>
+    r >= 1.0 ? chalk.green : r >= 0.5 ? chalk.yellow : chalk.red;
+
+  const complexityColor = (c: number) =>
+    c <= 5 ? chalk.green : c <= 10 ? chalk.yellow : chalk.red;
+
+  const lines: string[] = [chalk.bold("\n  Code Quality:")];
+
+  lines.push(
+    `    Test ratio:    ${ratioColor(metrics.testRatio)(`${metrics.testRatio.toFixed(2)}`)} ${chalk.gray(`(${metrics.testFiles} tests / ${metrics.sourceFiles} source)`)}`
+  );
+  lines.push(
+    `    Complexity:    ${complexityColor(metrics.averageComplexity)(`${metrics.averageComplexity.toFixed(1)} avg`)}`
+  );
+
+  if (metrics.highComplexityCount > 0) {
+    lines.push(
+      `    ${chalk.yellow(`⚠ ${metrics.highComplexityCount} file${metrics.highComplexityCount > 1 ? "s" : ""} above complexity threshold`)}`
+    );
+  }
+
+  return lines.join("\n");
+}
+
+/**
  * Render agent activity log.
  */
 export function renderAgentLog(
@@ -239,6 +276,7 @@ export function renderDashboard(options: {
   tddCycles: number;
   coverage?: CoverageMetrics;
   security?: SecurityMetrics;
+  codeMetrics?: CodeQualityMetrics;
   qualityGates?: PipelineResult;
   agentLog: AgentLogEntry[];
   currentTask?: string;
@@ -269,6 +307,10 @@ export function renderDashboard(options: {
 
   if (options.security) {
     parts.push(renderSecurity(options.security));
+  }
+
+  if (options.codeMetrics) {
+    parts.push(renderCodeMetrics(options.codeMetrics));
   }
 
   if (options.qualityGates) {

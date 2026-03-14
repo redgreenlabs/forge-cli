@@ -222,12 +222,22 @@ export {
   renderQualityGates,
   renderCoverage,
   renderSecurity,
+  renderCodeMetrics,
   renderAgentLog,
   type DashboardConfig,
   type CoverageMetrics,
   type SecurityMetrics,
+  type CodeQualityMetrics,
   type AgentLogEntry,
 } from "./tui/renderer.js";
+
+// Code Metrics
+export {
+  computeCodeMetrics,
+  computeCyclomaticComplexity,
+  type CodeMetrics,
+  type CodeMetricsOptions,
+} from "./metrics/code-metrics.js";
 
 // Agent Handoff Protocol
 export {

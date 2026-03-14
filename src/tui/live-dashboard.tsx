@@ -7,7 +7,7 @@ import { TddPhase } from "../tdd/enforcer.js";
 import { GateStatus } from "../gates/quality-gates.js";
 import type { DashboardState } from "../loop/orchestrator.js";
 import type { PipelineResult } from "../gates/quality-gates.js";
-import type { AgentLogEntry } from "../tui/renderer.js";
+import type { AgentLogEntry, CodeQualityMetrics } from "../tui/renderer.js";
 
 /** Hook to track terminal dimensions */
 function useTerminalHeight(): number {
@@ -195,6 +195,33 @@ function QualityGatesPanel({ result }: { result?: PipelineResult }) {
   );
 }
 
+function CodeMetricsPanel({ metrics }: { metrics?: CodeQualityMetrics }) {
+  if (!metrics) return null;
+
+  const ratioColor = metrics.testRatio >= 1.0 ? "green" : metrics.testRatio >= 0.5 ? "yellow" : "red";
+  const complexityColor = metrics.averageComplexity <= 5 ? "green" : metrics.averageComplexity <= 10 ? "yellow" : "red";
+
+  return (
+    <Box flexDirection="column" marginBottom={1}>
+      <Text bold>Code Quality:</Text>
+      <Text>
+        {"  "}<Text bold>Test ratio:</Text>{" "}
+        <Text color={ratioColor}>{metrics.testRatio.toFixed(2)}</Text>{" "}
+        <Text color="gray">({metrics.testFiles} tests / {metrics.sourceFiles} source)</Text>
+      </Text>
+      <Text>
+        {"  "}<Text bold>Complexity:</Text>{" "}
+        <Text color={complexityColor}>{metrics.averageComplexity.toFixed(1)} avg</Text>
+      </Text>
+      {metrics.highComplexityCount > 0 && (
+        <Text color="yellow">
+          {"  "}⚠ {metrics.highComplexityCount} file{metrics.highComplexityCount > 1 ? "s" : ""} above complexity threshold
+        </Text>
+      )}
+    </Box>
+  );
+}
+
 function AgentLog({ entries, maxEntries = 8 }: { entries: AgentLogEntry[]; maxEntries?: number }) {
   const recent = entries.slice(-maxEntries);
   const agentColors: Record<string, string> = {
@@ -276,6 +303,7 @@ function Dashboard({ state, startedAt }: { state: DashboardState; startedAt: num
         commitCount={state.commitCount}
       />
       <QualityGatesPanel result={state.qualityReport} />
+      <CodeMetricsPanel metrics={state.codeMetrics} />
       <AgentLog entries={state.agentLog} maxEntries={availableForLog} />
       <Box marginTop={1}>
         <Text color="gray">{"─".repeat(50)}</Text>

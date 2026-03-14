@@ -18,7 +18,7 @@ import { TddEnforcer, TddPhase } from "../tdd/enforcer.js";
 import { TaskGraph, type TaskNode } from "../prd/task-graph.js";
 import type { PrdTask } from "../prd/parser.js";
 import type { PipelineResult } from "../gates/quality-gates.js";
-import type { AgentLogEntry } from "../tui/renderer.js";
+import type { AgentLogEntry, CodeQualityMetrics } from "../tui/renderer.js";
 import { HandoffContext, HandoffPriority } from "../agents/handoff.js";
 import { TeamComposer } from "../agents/team.js";
 import type { WarningPanelData } from "../tui/error-panel.js";
@@ -27,6 +27,7 @@ import {
   type PhaseExecutor,
   type PhaseResult,
 } from "./pipeline.js";
+import { computeCodeMetrics } from "../metrics/code-metrics.js";
 
 /** Claude Code execution interface */
 export interface ClaudeExecutor {
@@ -78,6 +79,8 @@ export interface DashboardState {
   currentTask?: string;
   /** Number of commits created so far */
   commitCount: number;
+  /** Code quality metrics (complexity + test ratio) */
+  codeMetrics?: CodeQualityMetrics;
 }
 
 /**
@@ -113,6 +116,7 @@ export class LoopOrchestrator {
   private _sessionId?: string;
   private _currentTaskName?: string;
   private _extraSystemContext: string;
+  private _codeMetrics?: CodeQualityMetrics;
 
   constructor(options: OrchestratorOptions) {
     this._config = options.config;
@@ -151,6 +155,9 @@ export class LoopOrchestrator {
         this.engine.recordTaskCompleted(task.id);
       }
     }
+
+    // Compute initial code metrics
+    this.refreshCodeMetrics();
   }
 
   get state(): LoopState {
@@ -286,6 +293,11 @@ export class LoopOrchestrator {
           artifacts: pipelineResult.filesModified,
           priority: HandoffPriority.Normal,
         });
+      }
+
+      // Refresh code metrics after files changed
+      if (pipelineResult.filesModified.length > 0) {
+        this.refreshCodeMetrics();
       }
 
       this.logAgent(
@@ -615,6 +627,22 @@ export class LoopOrchestrator {
     };
   }
 
+  /** Refresh code metrics from the project root (non-fatal on error) */
+  private refreshCodeMetrics(): void {
+    try {
+      const metrics = computeCodeMetrics({ projectRoot: this._projectRoot });
+      this._codeMetrics = {
+        testRatio: metrics.testRatio,
+        sourceFiles: metrics.sourceFiles,
+        testFiles: metrics.testFiles,
+        averageComplexity: metrics.averageComplexity,
+        highComplexityCount: metrics.highComplexityFiles.length,
+      };
+    } catch {
+      // Non-fatal — metrics stay undefined
+    }
+  }
+
   private emitDashboardUpdate(): void {
     this._onDashboardUpdate({
       loop: this.engine.state,
@@ -625,6 +653,7 @@ export class LoopOrchestrator {
       handoffEntries: this._handoffContext.entries.length,
       currentTask: this._currentTaskName,
       commitCount: this._committedCount,
+      codeMetrics: this._codeMetrics,
     });
   }
 }

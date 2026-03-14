@@ -40,6 +40,13 @@ export interface ReportData {
     cyclesCompleted: number;
     violations: number;
   };
+  codeMetrics?: {
+    testRatio: number;
+    sourceFiles: number;
+    testFiles: number;
+    averageComplexity: number;
+    highComplexityFiles: number;
+  };
 }
 
 /**
@@ -139,6 +146,19 @@ function generateTerminalReport(data: ReportData): string {
     `    Violations:       ${data.tdd.violations === 0 ? chalk.green("0") : chalk.red(String(data.tdd.violations))}`
   );
 
+  // Code Quality Metrics
+  if (data.codeMetrics) {
+    const m = data.codeMetrics;
+    const ratioColor = m.testRatio >= 1.0 ? chalk.green : m.testRatio >= 0.5 ? chalk.yellow : chalk.red;
+    const complexityColor = m.averageComplexity <= 5 ? chalk.green : m.averageComplexity <= 10 ? chalk.yellow : chalk.red;
+    lines.push(chalk.bold("\n  Code Quality"));
+    lines.push(`    Test ratio:     ${ratioColor(`${m.testRatio.toFixed(2)}`)} ${chalk.gray(`(${m.testFiles} tests / ${m.sourceFiles} source)`)}`);
+    lines.push(`    Avg complexity: ${complexityColor(`${m.averageComplexity.toFixed(1)}`)}`);
+    if (m.highComplexityFiles > 0) {
+      lines.push(`    ${chalk.yellow(`⚠ ${m.highComplexityFiles} high-complexity files`)}`);
+    }
+  }
+
   lines.push(hr);
   lines.push("");
 
@@ -220,6 +240,17 @@ function generateHtmlReport(data: ReportData): string {
     <div class="value ${data.tdd.violations === 0 ? "good" : "bad"}">${data.tdd.violations}</div>
     <div class="label">Violations</div>
   </div>
+
+  ${data.codeMetrics ? `<h2>Code Quality</h2>
+  <div class="metric">
+    <div class="value ${data.codeMetrics.testRatio >= 1.0 ? "good" : data.codeMetrics.testRatio >= 0.5 ? "warn" : "bad"}">${data.codeMetrics.testRatio.toFixed(2)}</div>
+    <div class="label">Test Ratio (${data.codeMetrics.testFiles} tests / ${data.codeMetrics.sourceFiles} source)</div>
+  </div>
+  <div class="metric">
+    <div class="value ${data.codeMetrics.averageComplexity <= 5 ? "good" : data.codeMetrics.averageComplexity <= 10 ? "warn" : "bad"}">${data.codeMetrics.averageComplexity.toFixed(1)}</div>
+    <div class="label">Avg Cyclomatic Complexity</div>
+  </div>
+  ${data.codeMetrics.highComplexityFiles > 0 ? `<div class="metric"><div class="value warn">${data.codeMetrics.highComplexityFiles}</div><div class="label">High-Complexity Files</div></div>` : ""}` : ""}
 
   <h2>Quality Gates</h2>
   <div class="metric">
