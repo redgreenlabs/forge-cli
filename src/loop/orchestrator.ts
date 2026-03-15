@@ -27,6 +27,7 @@ import {
   type PhaseExecutor,
   type PhaseResult,
 } from "./pipeline.js";
+import { RateLimiter } from "./rate-limiter.js";
 import { computeCodeMetrics } from "../metrics/code-metrics.js";
 import {
   getHeadSha,
@@ -56,6 +57,8 @@ export interface ClaudeResponse {
   error: string | null;
   /** Raw result text from Claude CLI output */
   resultText?: string;
+  /** Whether the error was caused by context window exhaustion */
+  contextExhausted?: boolean;
 }
 
 /** Options for creating a LoopOrchestrator */
@@ -109,6 +112,7 @@ export interface DashboardState {
 export class LoopOrchestrator {
   private engine: LoopEngine;
   private circuitBreaker: CircuitBreaker;
+  private rateLimiter: RateLimiter;
   private tddEnforcer: TddEnforcer;
   private taskGraph: TaskGraph;
   private _agentLog: AgentLogEntry[] = [];
@@ -151,6 +155,7 @@ export class LoopOrchestrator {
 
     this.engine = new LoopEngine(options.config, handler);
     this.circuitBreaker = new CircuitBreaker(options.config.circuitBreaker);
+    this.rateLimiter = RateLimiter.perHour(options.config.maxCallsPerHour);
     this.tddEnforcer = new TddEnforcer();
     this.taskGraph = new TaskGraph(options.tasks as TaskNode[]);
     this._handoffContext = new HandoffContext();
@@ -211,10 +216,9 @@ export class LoopOrchestrator {
 
   /** Get error panel data for TUI display */
   get errorPanelData(): WarningPanelData {
-    const cbStats = this.circuitBreakerStats;
     return {
       circuitBreakerState: this.circuitBreaker.state,
-      rateLimitRemaining: this._config.maxCallsPerHour - cbStats.totalIterations,
+      rateLimitRemaining: this.rateLimiter.remaining,
       rateLimitTotal: this._config.maxCallsPerHour,
       permissionDenials: 0,
       buildFailures: 0,
@@ -231,6 +235,7 @@ export class LoopOrchestrator {
   async runIteration(): Promise<void> {
     this.engine.incrementIteration();
     this.engine.emitIterationStart();
+    this.rateLimiter.record();
 
     try {
       // Select next task
@@ -374,7 +379,8 @@ export class LoopOrchestrator {
     handoffPrompt: string
   ): PhaseExecutor {
     const timeout = this._config.timeoutMinutes * 60 * 1000;
-    const sessionId = this._sessionId;
+    // Use a getter so session rotation is picked up mid-iteration
+    const getSessionId = () => this._sessionId;
     const taskContext = `Task: ${task.title}\nAcceptance criteria: ${(task as TaskNode & { acceptanceCriteria?: string[] }).acceptanceCriteria?.join(", ") ?? ""}`;
     const handoffSection = handoffPrompt ? `\n\n${handoffPrompt}` : "";
 
@@ -387,14 +393,13 @@ export class LoopOrchestrator {
         const testerPrompt = this._extraSystemContext
           ? `${this._extraSystemContext}\n\n${getAgentPrompt(AgentRole.Tester)}`
           : getAgentPrompt(AgentRole.Tester);
-        const response = await this._executor.execute({
+        const response = await this.executeWithSessionRotation({
           prompt: `[TDD RED PHASE] Write a failing test for:\n${taskContext}${handoffSection}\n\nWrite ONLY the test. Do NOT implement the feature yet.`,
           systemPrompt: testerPrompt,
           allowedTools: getAgentAllowedTools(AgentRole.Tester),
           timeout,
-          sessionId,
           onStderr: this.makeStderrHandler(AgentRole.Tester),
-        });
+        }, getSessionId);
 
         if (response.testResults) {
           this.tddEnforcer.recordTestRun(response.testResults);
@@ -417,14 +422,13 @@ export class LoopOrchestrator {
         const implPrompt = this._extraSystemContext
           ? `${this._extraSystemContext}\n\n${getAgentPrompt(AgentRole.Implementer)}`
           : getAgentPrompt(AgentRole.Implementer);
-        const response = await this._executor.execute({
+        const response = await this.executeWithSessionRotation({
           prompt: `[TDD GREEN PHASE] Implement the MINIMAL code to make the failing test pass:\n${taskContext}${handoffSection}\n\nWrite only enough code to pass the test. Keep it simple.`,
           systemPrompt: implPrompt,
           allowedTools: getAgentAllowedTools(AgentRole.Implementer),
           timeout,
-          sessionId,
           onStderr: this.makeStderrHandler(AgentRole.Implementer),
-        });
+        }, getSessionId);
 
         if (response.testResults) {
           this.tddEnforcer.recordTestRun(response.testResults);
@@ -447,14 +451,13 @@ export class LoopOrchestrator {
         const refactorPrompt = this._extraSystemContext
           ? `${this._extraSystemContext}\n\n${getAgentPrompt(AgentRole.Implementer)}`
           : getAgentPrompt(AgentRole.Implementer);
-        const response = await this._executor.execute({
+        const response = await this.executeWithSessionRotation({
           prompt: `[TDD REFACTOR PHASE] Improve code quality without changing behavior:\n${taskContext}\n\nAll tests MUST still pass after refactoring.`,
           systemPrompt: refactorPrompt,
           allowedTools: getAgentAllowedTools(AgentRole.Implementer),
           timeout,
-          sessionId,
           onStderr: this.makeStderrHandler(AgentRole.Implementer),
-        });
+        }, getSessionId);
 
         if (response.testResults) {
           const regression = this.tddEnforcer.checkTestRegression(response.testResults);
@@ -556,6 +559,11 @@ export class LoopOrchestrator {
 
   /** Check if the loop should stop */
   shouldStop(): boolean {
+    // Check rate limiter (reset window if elapsed)
+    this.rateLimiter.checkWindow();
+    if (!this.rateLimiter.canProceed()) {
+      return true;
+    }
     return this.engine.shouldStop();
   }
 
@@ -596,6 +604,39 @@ export class LoopOrchestrator {
     }
 
     return workspaces.filter((ws) => affected.has(ws.name));
+  }
+
+  /**
+   * Execute a Claude call with automatic session rotation on context exhaustion.
+   *
+   * If the call fails because the session's context window is full,
+   * clears the session ID (starting a fresh session) and retries once.
+   */
+  private async executeWithSessionRotation(
+    options: Parameters<ClaudeExecutor["execute"]>[0],
+    getSessionId: () => string | undefined
+  ): Promise<ClaudeResponse> {
+    const response = await this._executor.execute({
+      ...options,
+      sessionId: getSessionId(),
+    });
+
+    if (response.contextExhausted && this._sessionId) {
+      this.logAgent("system", "session", "Context window exhausted — rotating to fresh session");
+      this._sessionId = undefined;
+      // Retry with fresh session (no --continue)
+      return this._executor.execute({
+        ...options,
+        sessionId: undefined,
+      });
+    }
+
+    return response;
+  }
+
+  /** Rotate to a fresh Claude session */
+  rotateSession(): void {
+    this._sessionId = undefined;
   }
 
   private logAgent(agent: string, action: string, detail: string): void {

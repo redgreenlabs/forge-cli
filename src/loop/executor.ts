@@ -82,13 +82,20 @@ export function buildClaudeArgs(options: ClaudeExecOptions): string[] {
 export function parseClaudeResponse(raw: RawClaudeOutput): ClaudeResponse {
   // Handle error exit codes
   if (raw.exitCode !== 0) {
+    const errorText = raw.stderr || raw.stdout || `Process exited with code ${raw.exitCode}`;
+    // Detect context window exhaustion
+    const isContextLimit =
+      errorText.includes("exceed context limit") ||
+      errorText.includes("context_length_exceeded") ||
+      errorText.includes("maximum context length");
     return {
       status: "error",
       exitSignal: false,
       filesModified: [],
       testsPass: false,
       testResults: { total: 0, passed: 0, failed: 0 },
-      error: raw.stderr || `Process exited with code ${raw.exitCode}`,
+      error: errorText,
+      contextExhausted: isContextLimit,
     };
   }
 
