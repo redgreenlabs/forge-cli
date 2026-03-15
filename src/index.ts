@@ -134,6 +134,7 @@ export {
 
 export {
   importPrd,
+  detectTechFromContent,
   type ImportResult,
 } from "./commands/import.js";
 

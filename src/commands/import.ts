@@ -7,7 +7,7 @@ import {
 } from "fs";
 import { join, basename, extname } from "path";
 import { parsePrd, TaskPriority, TaskStatus, type Prd } from "../prd/parser.js";
-import { FORGE_DIR } from "../config/loader.js";
+import { FORGE_DIR, CONFIG_FILE } from "../config/loader.js";
 import { scanTasks, shouldMarkDone, type ScanResult } from "./scan.js";
 
 export interface ImportResult {
@@ -114,11 +114,155 @@ export function importPrd(filePath: string, projectRoot: string): ImportResult {
   const ext = extname(filename) || ".md";
   copyFileSync(filePath, join(specsDir, `prd-original${ext}`));
 
+  // Detect technology from PRD content and update config commands
+  // if they are still at defaults (user hasn't customized them)
+  updateConfigFromPrd(content, forgeDir);
+
   return {
     success: true,
     tasksImported: prd.tasks.length,
     priorities,
   };
+}
+
+/** Technology stack with associated commands */
+interface TechStack {
+  test: string;
+  lint: string;
+  build: string;
+  typecheck: string;
+}
+
+/** Technology patterns to match in PRD content */
+const TECH_PATTERNS: Array<{ patterns: RegExp[]; commands: TechStack }> = [
+  {
+    patterns: [/\bflutter\b/i, /\bdart\b/i],
+    commands: {
+      test: "flutter test",
+      lint: "dart analyze",
+      build: "flutter build",
+      typecheck: "dart analyze",
+    },
+  },
+  {
+    patterns: [/\bswift\b/i, /\bswiftui\b/i, /\bxcode\b/i],
+    commands: {
+      test: "swift test",
+      lint: "swiftlint",
+      build: "swift build",
+      typecheck: "swift build",
+    },
+  },
+  {
+    patterns: [/\bkotlin\b/i, /\bandroid\b/i, /\bjetpack\s+compose\b/i],
+    commands: {
+      test: "gradle test",
+      lint: "gradle lint",
+      build: "gradle build",
+      typecheck: "gradle build",
+    },
+  },
+  {
+    patterns: [/\breact\s+native\b/i],
+    commands: {
+      test: "npx jest",
+      lint: "npm run lint",
+      build: "npx react-native build-android",
+      typecheck: "npx tsc --noEmit",
+    },
+  },
+  {
+    patterns: [/\belixir\b/i, /\bphoenix\b/i],
+    commands: {
+      test: "mix test",
+      lint: "mix credo",
+      build: "mix compile",
+      typecheck: "mix dialyzer",
+    },
+  },
+  {
+    patterns: [/\bruby\b/i, /\brails\b/i],
+    commands: {
+      test: "bundle exec rspec",
+      lint: "bundle exec rubocop",
+      build: "bundle exec rake build",
+      typecheck: "",
+    },
+  },
+  {
+    patterns: [/\bjava\b(?!script)/i, /\bspring\s+boot\b/i, /\bmaven\b/i],
+    commands: {
+      test: "mvn test",
+      lint: "mvn checkstyle:check",
+      build: "mvn package",
+      typecheck: "mvn compile",
+    },
+  },
+  {
+    patterns: [/\bc\+\+\b/i, /\bcmake\b/i],
+    commands: {
+      test: "ctest",
+      lint: "clang-tidy",
+      build: "cmake --build .",
+      typecheck: "cmake --build .",
+    },
+  },
+];
+
+/**
+ * Detect technology stack from PRD content.
+ *
+ * Scans the first 5000 chars of the PRD for technology keywords
+ * (Flutter, Swift, Kotlin, etc.) and returns the matching commands.
+ */
+export function detectTechFromContent(content: string): TechStack | null {
+  // Only scan a reasonable prefix to avoid false matches in long docs
+  const text = content.slice(0, 5000);
+
+  for (const { patterns, commands } of TECH_PATTERNS) {
+    if (patterns.some((p) => p.test(text))) {
+      return commands;
+    }
+  }
+
+  return null;
+}
+
+/**
+ * Update forge config commands if they are still at defaults.
+ *
+ * When a PRD mentions a technology that doesn't match the default commands
+ * (e.g. Flutter project with default "npm test"), update the config file
+ * to use the correct commands for that technology.
+ */
+function updateConfigFromPrd(prdContent: string, forgeDir: string): void {
+  const detected = detectTechFromContent(prdContent);
+  if (!detected) return;
+
+  const configPath = join(forgeDir, CONFIG_FILE);
+  if (!existsSync(configPath)) return;
+
+  try {
+    const config = JSON.parse(readFileSync(configPath, "utf-8"));
+    const cmds = config.commands;
+
+    // Only update if commands are still at defaults (not user-customized)
+    const isDefault =
+      cmds?.test === "npm test" &&
+      cmds?.lint === "npm run lint" &&
+      cmds?.build === "npm run build";
+
+    if (!isDefault) return;
+
+    config.commands = {
+      ...cmds,
+      ...detected,
+    };
+
+    writeFileSync(configPath, JSON.stringify(config, null, 2) + "\n");
+  } catch {
+    // Non-fatal — config stays as-is
+  }
 }
 
 /**

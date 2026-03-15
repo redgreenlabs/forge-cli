@@ -11,6 +11,7 @@ import { join } from "path";
 import { tmpdir } from "os";
 import {
   importPrd,
+  detectTechFromContent,
   type ImportResult,
 } from "../../src/commands/import.js";
 
@@ -154,6 +155,119 @@ describe("forge import", () => {
       expect(result.priorities.critical).toBe(1);
       expect(result.priorities.high).toBe(1);
       expect(result.priorities.low).toBe(1);
+    });
+
+    it("should update config commands when PRD mentions Flutter", () => {
+      // Write default config
+      writeFileSync(
+        join(tmpDir, ".forge", "forge.config.json"),
+        JSON.stringify({
+          commands: {
+            test: "npm test",
+            lint: "npm run lint",
+            build: "npm run build",
+            typecheck: "",
+          },
+        })
+      );
+
+      const prdPath = join(tmpDir, "prd.md");
+      writeFileSync(
+        prdPath,
+        `# Filelight for macOS — Flutter Edition
+Build entirely in Flutter (Dart) targeting macOS desktop.
+- [ ] Setup Flutter project
+`
+      );
+
+      importPrd(prdPath, tmpDir);
+
+      const config = JSON.parse(
+        readFileSync(join(tmpDir, ".forge", "forge.config.json"), "utf-8")
+      );
+      expect(config.commands.test).toBe("flutter test");
+      expect(config.commands.lint).toBe("dart analyze");
+      expect(config.commands.build).toBe("flutter build");
+    });
+
+    it("should not update config if commands are already customized", () => {
+      writeFileSync(
+        join(tmpDir, ".forge", "forge.config.json"),
+        JSON.stringify({
+          commands: {
+            test: "pytest",
+            lint: "ruff check",
+            build: "python -m build",
+            typecheck: "mypy .",
+          },
+        })
+      );
+
+      const prdPath = join(tmpDir, "prd.md");
+      writeFileSync(prdPath, "# Flutter App\n- [ ] Setup\n");
+
+      importPrd(prdPath, tmpDir);
+
+      const config = JSON.parse(
+        readFileSync(join(tmpDir, ".forge", "forge.config.json"), "utf-8")
+      );
+      // Should stay as pytest, not flutter test
+      expect(config.commands.test).toBe("pytest");
+    });
+  });
+
+  describe("detectTechFromContent", () => {
+    it("should detect Flutter/Dart", () => {
+      const tech = detectTechFromContent("Built with Flutter (Dart) for macOS");
+      expect(tech).not.toBeNull();
+      expect(tech!.test).toBe("flutter test");
+    });
+
+    it("should detect Swift/SwiftUI", () => {
+      const tech = detectTechFromContent("Native SwiftUI app for iOS");
+      expect(tech).not.toBeNull();
+      expect(tech!.test).toBe("swift test");
+    });
+
+    it("should detect Kotlin/Android", () => {
+      const tech = detectTechFromContent("Android app using Kotlin and Jetpack Compose");
+      expect(tech).not.toBeNull();
+      expect(tech!.test).toBe("gradle test");
+    });
+
+    it("should detect React Native", () => {
+      const tech = detectTechFromContent("Cross-platform React Native mobile app");
+      expect(tech).not.toBeNull();
+      expect(tech!.test).toBe("npx jest");
+    });
+
+    it("should detect Elixir/Phoenix", () => {
+      const tech = detectTechFromContent("Backend in Elixir with Phoenix framework");
+      expect(tech).not.toBeNull();
+      expect(tech!.test).toBe("mix test");
+    });
+
+    it("should detect Ruby/Rails", () => {
+      const tech = detectTechFromContent("Ruby on Rails web application");
+      expect(tech).not.toBeNull();
+      expect(tech!.test).toBe("bundle exec rspec");
+    });
+
+    it("should detect Java/Spring", () => {
+      const tech = detectTechFromContent("Java Spring Boot microservice");
+      expect(tech).not.toBeNull();
+      expect(tech!.test).toBe("mvn test");
+    });
+
+    it("should not match 'javascript' as 'java'", () => {
+      const tech = detectTechFromContent("A JavaScript frontend application");
+      // Should not match Java pattern (negative lookahead for 'script')
+      expect(tech).toBeNull();
+    });
+
+    it("should return null for unknown tech", () => {
+      const tech = detectTechFromContent("A generic project with tasks");
+      expect(tech).toBeNull();
     });
   });
 });
