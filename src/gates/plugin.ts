@@ -154,7 +154,7 @@ export function createBuiltinGates(
     {
       name: "linting",
       description: "Run code linting",
-      severity: QualityGateSeverity.Warn,
+      severity: QualityGateSeverity.Block,
       check: async () => {
         try {
           const { execSync } = await import("child_process");
@@ -164,8 +164,13 @@ export function createBuiltinGates(
             timeout: 60_000,
           });
           return { passed: true, message: "No linting issues" };
-        } catch {
-          return { passed: false, message: "Linting issues found" };
+        } catch (err) {
+          const stderr =
+            err && typeof err === "object" && "stderr" in err
+              ? String((err as { stderr: unknown }).stderr).slice(0, 500)
+              : "";
+          const detail = stderr ? `:\n${stderr}` : "";
+          return { passed: false, message: `Linting issues found${detail}` };
         }
       },
     },

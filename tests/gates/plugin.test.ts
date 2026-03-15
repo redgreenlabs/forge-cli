@@ -106,7 +106,7 @@ describe("Gate Plugin System", () => {
       const testGate = gates.find((g) => g.name === "tests-pass");
       expect(testGate?.severity).toBe(QualityGateSeverity.Block);
       const lintGate = gates.find((g) => g.name === "linting");
-      expect(lintGate?.severity).toBe(QualityGateSeverity.Warn);
+      expect(lintGate?.severity).toBe(QualityGateSeverity.Block);
     });
   });
 
