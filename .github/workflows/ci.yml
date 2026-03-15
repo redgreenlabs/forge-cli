@@ -33,13 +33,12 @@ jobs:
         run: npm run test:coverage
         timeout-minutes: 5
 
+      - name: Build
+        run: npm run build
+
       - name: Integration tests
         run: npm run test:integration
         timeout-minutes: 10
-        continue-on-error: true
-
-      - name: Build
-        run: npm run build
 
       - name: Security audit
         run: npm audit --audit-level=moderate
