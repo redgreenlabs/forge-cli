@@ -290,6 +290,13 @@ export class LoopOrchestrator {
         }
       }
 
+      // If the pipeline completed a task successfully but no files were detected
+      // (e.g. no git repo, or files committed by Claude before we could check),
+      // treat it as progress so the circuit breaker doesn't trip falsely.
+      if (pipelineResult.completed && filesModified.length === 0) {
+        filesModified = ["(task completed — file detection unavailable)"];
+      }
+
       // Record results
       this.engine.recordFilesModified(filesModified);
       this._committedCount += commitsCreated;

@@ -2,6 +2,7 @@ import { describe, it, expect, beforeEach, afterEach } from "vitest";
 import { mkdtempSync, rmSync, existsSync, readFileSync, mkdirSync } from "fs";
 import { join } from "path";
 import { tmpdir } from "os";
+import { execSync } from "child_process";
 import {
   initProject,
   detectProjectType,
@@ -103,6 +104,49 @@ describe("forge init", () => {
       expect(result.createdFiles).toContain("forge.config.json");
       expect(result.createdFiles).toContain("PROMPT.md");
       expect(result.createdFiles).toContain("tasks.md");
+    });
+
+    it("should initialize git repo when none exists", async () => {
+      await initProject(tmpDir, {});
+      expect(existsSync(join(tmpDir, ".git"))).toBe(true);
+
+      // Should have an initial commit so git rev-parse HEAD works
+      const head = execSync("git rev-parse HEAD", {
+        cwd: tmpDir,
+        encoding: "utf-8",
+        stdio: ["pipe", "pipe", "pipe"],
+      }).trim();
+      expect(head).toMatch(/^[0-9a-f]{40}$/);
+    });
+
+    it("should not re-initialize existing git repo", async () => {
+      // Create git repo with a custom commit first
+      execSync("git init", { cwd: tmpDir, stdio: "pipe" });
+      execSync('git config user.email "test@test.com"', { cwd: tmpDir, stdio: "pipe" });
+      execSync('git config user.name "Test"', { cwd: tmpDir, stdio: "pipe" });
+      execSync("git commit --allow-empty -m 'existing commit'", { cwd: tmpDir, stdio: "pipe" });
+
+      const headBefore = execSync("git rev-parse HEAD", {
+        cwd: tmpDir,
+        encoding: "utf-8",
+        stdio: ["pipe", "pipe", "pipe"],
+      }).trim();
+
+      await initProject(tmpDir, {});
+
+      // HEAD should still be the original commit (not overwritten)
+      const headAfter = execSync("git rev-parse HEAD", {
+        cwd: tmpDir,
+        encoding: "utf-8",
+        stdio: ["pipe", "pipe", "pipe"],
+      }).trim();
+      // There will be a new commit from forge init adding files, but the original commit should still be in history
+      const log = execSync("git log --oneline", {
+        cwd: tmpDir,
+        encoding: "utf-8",
+        stdio: ["pipe", "pipe", "pipe"],
+      });
+      expect(log).toContain("existing commit");
     });
   });
 

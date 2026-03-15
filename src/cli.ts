@@ -1,6 +1,6 @@
 import { Command } from "commander";
 import { readFileSync, existsSync } from "fs";
-import { resolve } from "path";
+import { resolve, join } from "path";
 import chalk from "chalk";
 import { initProject } from "./commands/init.js";
 import { importPrd } from "./commands/import.js";
@@ -274,6 +274,24 @@ program
         chalk.yellow("No tasks found. Run `forge import <prd>` first.")
       );
       return;
+    }
+
+    // Ensure git repo exists — forge relies on git for change tracking
+    if (!existsSync(join(cwd, ".git"))) {
+      try {
+        const { execSync } = await import("child_process");
+        execSync("git init", { cwd, stdio: "pipe" });
+        execSync("git add -A", { cwd, stdio: "pipe" });
+        execSync('git commit -m "chore: initialize project with forge" --allow-empty', {
+          cwd,
+          stdio: "pipe",
+        });
+        console.log(chalk.gray("  Initialized git repository for change tracking."));
+      } catch {
+        console.log(
+          chalk.yellow("Warning: No git repository found. File change tracking will be limited.")
+        );
+      }
     }
 
     const useTui = options.tui !== false && !options.verbose;

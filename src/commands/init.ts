@@ -6,6 +6,7 @@ import {
   appendFileSync,
 } from "fs";
 import { join } from "path";
+import { execSync } from "child_process";
 import { defaultConfig } from "../config/schema.js";
 import { FORGE_DIR, CONFIG_FILE } from "../config/loader.js";
 
@@ -212,11 +213,39 @@ export async function initProject(
     writeFileSync(gitignorePath, forgeIgnore.trimStart());
   }
 
+  // Ensure git repo exists — forge relies on git for file change detection,
+  // commit tracking, and circuit breaker progress checks.
+  ensureGitRepo(projectRoot);
+
   return {
     success: true,
     projectType,
     createdFiles,
   };
+}
+
+/**
+ * Ensure a git repository is initialized in the project root.
+ *
+ * If no `.git` directory exists, runs `git init` and creates an initial commit
+ * so that `git status`, `git diff`, and `git rev-parse HEAD` work correctly
+ * during forge run.
+ */
+function ensureGitRepo(projectRoot: string): void {
+  if (existsSync(join(projectRoot, ".git"))) {
+    return;
+  }
+
+  try {
+    execSync("git init", { cwd: projectRoot, stdio: "pipe" });
+    execSync("git add -A", { cwd: projectRoot, stdio: "pipe" });
+    execSync('git commit -m "chore: initialize project with forge"', {
+      cwd: projectRoot,
+      stdio: "pipe",
+    });
+  } catch {
+    // Non-fatal — git may not be installed
+  }
 }
 
 function generatePromptTemplate(
