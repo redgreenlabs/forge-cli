@@ -272,6 +272,71 @@ EXIT_SIGNAL: false
       expect(result.error).toContain("timeout");
     });
 
+    it("should treat exit code 143 (SIGTERM) as timeout with actionable message", () => {
+      const raw: RawClaudeOutput = {
+        stdout: "",
+        stderr: "",
+        exitCode: 143,
+      };
+
+      const result = parseClaudeResponse(raw);
+      expect(result.status).toBe("error");
+      expect(result.error).toContain("Process timed out");
+      expect(result.error).toContain("timeoutMinutes");
+      expect(result.rateLimited).toBe(false);
+    });
+
+    it("should treat exit code 124 as timeout, not rate limit", () => {
+      const raw: RawClaudeOutput = {
+        stdout: "",
+        stderr: "rate limit reached",
+        exitCode: 124,
+      };
+
+      const result = parseClaudeResponse(raw);
+      expect(result.status).toBe("error");
+      expect(result.error).toContain("Process timed out");
+      expect(result.rateLimited).toBe(false);
+    });
+
+    it("should detect rate limit from error text when not a timeout", () => {
+      const raw: RawClaudeOutput = {
+        stdout: "",
+        stderr: "usage limit reached — please wait",
+        exitCode: 1,
+      };
+
+      const result = parseClaudeResponse(raw);
+      expect(result.status).toBe("error");
+      expect(result.rateLimited).toBe(true);
+    });
+
+    it("should detect rate limit event in structured JSON output", () => {
+      const raw: RawClaudeOutput = {
+        stdout: JSON.stringify([
+          { type: "rate_limit_event", content: "Rate limited" },
+        ]),
+        stderr: "",
+        exitCode: 0,
+      };
+
+      const result = parseClaudeResponse(raw);
+      expect(result.status).toBe("error");
+      expect(result.rateLimited).toBe(true);
+      expect(result.error).toContain("rate limit");
+    });
+
+    it("should not flag normal errors as rate limited", () => {
+      const raw: RawClaudeOutput = {
+        stdout: "",
+        stderr: "Something went wrong",
+        exitCode: 1,
+      };
+
+      const result = parseClaudeResponse(raw);
+      expect(result.rateLimited).toBe(false);
+    });
+
     it("should handle unparseable output gracefully", () => {
       const raw: RawClaudeOutput = {
         stdout: "not json at all",

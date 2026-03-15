@@ -371,6 +371,7 @@ export class LoopOrchestrator {
       // Refresh code metrics after files changed
       if (filesModified.length > 0) {
         this.refreshCodeMetrics();
+        this.emitDashboardUpdate();
       }
 
       this.logAgent(
@@ -519,6 +520,7 @@ export class LoopOrchestrator {
           else counts.medium++;
         }
         this._securityMetrics = counts;
+        this.emitDashboardUpdate();
         if (!result.passed) {
           this.logAgent(AgentRole.Security, "findings", `${result.findings.length} issues found`);
         }
@@ -651,8 +653,11 @@ export class LoopOrchestrator {
       sessionId: getSessionId(),
     });
 
-    if (response.contextExhausted && this._sessionId) {
-      this.logAgent("system", "session", "Context window exhausted — rotating to fresh session");
+    // Rotate session on context exhaustion or timeout (large context likely caused the timeout)
+    const isTimeout = response.error?.includes("Process timed out");
+    if ((response.contextExhausted || isTimeout) && this._sessionId) {
+      const reason = response.contextExhausted ? "Context window exhausted" : "Process timed out";
+      this.logAgent("system", "session", `${reason} — rotating to fresh session`);
       this._sessionId = undefined;
       return this._executor.execute({
         ...options,

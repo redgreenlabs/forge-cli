@@ -82,22 +82,29 @@ export function buildClaudeArgs(options: ClaudeExecOptions): string[] {
 export function parseClaudeResponse(raw: RawClaudeOutput): ClaudeResponse {
   // Handle error exit codes
   if (raw.exitCode !== 0) {
-    const errorText = raw.stderr || raw.stdout || `Process exited with code ${raw.exitCode}`;
+    const fallbackMsg = `Process exited with code ${raw.exitCode}`;
+    const errorText = raw.stderr || raw.stdout || fallbackMsg;
+    // Exit code 143 = SIGTERM (128+15), typically from timeout kill
+    // Exit code 124 = timeout wrapper exit code
+    const isTimeout = raw.exitCode === 143 || raw.exitCode === 124;
+    const timeoutMsg = isTimeout
+      ? `Process timed out (exit code ${raw.exitCode}) — consider increasing timeoutMinutes`
+      : undefined;
     // Detect context window exhaustion
     const isContextLimit =
       errorText.includes("exceed context limit") ||
       errorText.includes("context_length_exceeded") ||
       errorText.includes("maximum context length");
     // Layer 2 & 3: Rate limit detection from error text
-    // Layer 3: exit code 124 is a process timeout, NOT an API rate limit
-    const isRateLimited = raw.exitCode !== 124 && detectRateLimitInText(errorText);
+    // Timeout exit codes are NOT rate limits
+    const isRateLimited = !isTimeout && detectRateLimitInText(errorText);
     return {
       status: "error",
       exitSignal: false,
       filesModified: [],
       testsPass: false,
       testResults: { total: 0, passed: 0, failed: 0 },
-      error: errorText,
+      error: timeoutMsg ?? errorText,
       contextExhausted: isContextLimit,
       rateLimited: isRateLimited,
     };

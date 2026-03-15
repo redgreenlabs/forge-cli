@@ -234,6 +234,63 @@ describe("LoopOrchestrator", () => {
     });
   });
 
+  describe("dashboard updates for security and code metrics", () => {
+    it("should emit dashboard updates with security metrics after iteration", async () => {
+      const updates: Array<{ security?: unknown }> = [];
+      const orch = createOrchestrator({
+        onDashboardUpdate: (state) => updates.push({ security: state.security }),
+      });
+      await orch.runIteration();
+
+      // At least one dashboard update should include security data
+      const withSecurity = updates.filter((u) => u.security !== undefined);
+      expect(withSecurity.length).toBeGreaterThan(0);
+    });
+
+    it("should emit multiple dashboard updates during a single iteration", async () => {
+      const updateCount = { value: 0 };
+      const orch = createOrchestrator({
+        onDashboardUpdate: () => { updateCount.value++; },
+      });
+      await orch.runIteration();
+
+      // Should have many updates: phase changes, security, code metrics, etc.
+      expect(updateCount.value).toBeGreaterThan(3);
+    });
+  });
+
+  describe("timeout handling", () => {
+    it("should rotate session on timeout error", async () => {
+      let callCount = 0;
+      const timeoutThenSuccess: ClaudeExecutor = {
+        execute: vi.fn().mockImplementation(async (opts: { sessionId?: string }) => {
+          callCount++;
+          if (callCount === 1) {
+            // First call with session — times out
+            return makeClaudeResponse({
+              status: "error",
+              error: "Process timed out (exit code 143) — consider increasing timeoutMinutes",
+              exitSignal: false,
+              testsPass: false,
+            });
+          }
+          // Retry without session should succeed
+          expect(opts.sessionId).toBeUndefined();
+          return makeClaudeResponse();
+        }),
+      };
+
+      const orch = createOrchestrator({
+        executor: timeoutThenSuccess,
+        sessionId: "sess-timeout-test",
+      });
+      await orch.runIteration();
+
+      // Executor should have been called twice (timeout + retry)
+      expect(callCount).toBeGreaterThanOrEqual(2);
+    });
+  });
+
   describe("pre-completed tasks", () => {
     it("should pre-mark tasks with done status", () => {
       const orch = new LoopOrchestrator({
