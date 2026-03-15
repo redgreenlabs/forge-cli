@@ -28,6 +28,7 @@ export {
   getAgentDefinition,
   selectAgentForTask,
   type AgentDefinition,
+  type AgentProjectCommands,
 } from "./agents/roles.js";
 
 // Loop Engine

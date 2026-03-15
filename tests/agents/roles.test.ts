@@ -57,12 +57,76 @@ describe("Agent Roles", () => {
       expect(tools).not.toContain("Write");
     });
 
-    it("should allow test execution for tester", () => {
+    it("should include base tools without project commands", () => {
       const tools = getAgentAllowedTools(AgentRole.Tester);
-      const hasTestBash = tools.some(
-        (t) => t.includes("test") || t.includes("vitest") || t.includes("jest")
-      );
-      expect(hasTestBash).toBe(true);
+      expect(tools).toContain("Read");
+      expect(tools).toContain("Write");
+      expect(tools).not.toContain("Bash(npm test)");
+    });
+
+    it("should add Node test command for tester with Node project", () => {
+      const tools = getAgentAllowedTools(AgentRole.Tester, {
+        test: "npm test", lint: "npm run lint", build: "npm run build", typecheck: "npx tsc --noEmit",
+      });
+      expect(tools).toContain("Bash(npm test)");
+    });
+
+    it("should add Rust test command for tester with Rust project", () => {
+      const tools = getAgentAllowedTools(AgentRole.Tester, {
+        test: "cargo test", lint: "cargo clippy", build: "cargo build", typecheck: "cargo check",
+      });
+      expect(tools).toContain("Bash(cargo test)");
+      expect(tools).not.toContain("Bash(npm test)");
+    });
+
+    it("should add Python test command for tester with Python project", () => {
+      const tools = getAgentAllowedTools(AgentRole.Tester, {
+        test: "pytest", lint: "ruff check", build: "python -m build", typecheck: "mypy .",
+      });
+      expect(tools).toContain("Bash(pytest)");
+    });
+
+    it("should add Go test command for tester with Go project", () => {
+      const tools = getAgentAllowedTools(AgentRole.Tester, {
+        test: "go test ./...", lint: "go vet ./...", build: "go build ./...", typecheck: "",
+      });
+      expect(tools).toContain("Bash(go test ./...)");
+    });
+
+    it("should add build and typecheck for implementer", () => {
+      const tools = getAgentAllowedTools(AgentRole.Implementer, {
+        test: "cargo test", lint: "cargo clippy", build: "cargo build", typecheck: "cargo check",
+      });
+      expect(tools).toContain("Bash(cargo build)");
+      expect(tools).toContain("Bash(cargo check)");
+    });
+
+    it("should add npm audit for security agent on Node projects", () => {
+      const tools = getAgentAllowedTools(AgentRole.Security, {
+        test: "npm test", lint: "npm run lint", build: "npm run build", typecheck: "",
+      });
+      expect(tools).toContain("Bash(npm audit)");
+    });
+
+    it("should add cargo audit for security agent on Rust projects", () => {
+      const tools = getAgentAllowedTools(AgentRole.Security, {
+        test: "cargo test", lint: "cargo clippy", build: "cargo build", typecheck: "",
+      });
+      expect(tools).toContain("Bash(cargo audit)");
+    });
+
+    it("should add pip-audit for security agent on Python projects", () => {
+      const tools = getAgentAllowedTools(AgentRole.Security, {
+        test: "pytest", lint: "ruff check", build: "python -m build", typecheck: "",
+      });
+      expect(tools).toContain("Bash(pip-audit)");
+    });
+
+    it("should not add empty typecheck command as tool", () => {
+      const tools = getAgentAllowedTools(AgentRole.Implementer, {
+        test: "pytest", lint: "ruff check", build: "python -m build", typecheck: "",
+      });
+      expect(tools).not.toContain("Bash()");
     });
   });
 

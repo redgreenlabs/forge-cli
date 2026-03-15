@@ -424,7 +424,7 @@ export class LoopOrchestrator {
         const response = await this.executeWithSessionRotation({
           prompt: `[TDD RED PHASE] Write a failing test for:\n${taskContext}${handoffSection}\n\nWrite ONLY the test. Do NOT implement the feature yet.`,
           systemPrompt: testerPrompt,
-          allowedTools: getAgentAllowedTools(AgentRole.Tester),
+          allowedTools: getAgentAllowedTools(AgentRole.Tester, this._config.commands),
           timeout,
           onStderr: this.makeStderrHandler(AgentRole.Tester),
         }, getSessionId);
@@ -454,7 +454,7 @@ export class LoopOrchestrator {
         const response = await this.executeWithSessionRotation({
           prompt: `[TDD GREEN PHASE] Implement the MINIMAL code to make the failing test pass:\n${taskContext}${handoffSection}\n\nWrite only enough code to pass the test. Keep it simple.`,
           systemPrompt: implPrompt,
-          allowedTools: getAgentAllowedTools(AgentRole.Implementer),
+          allowedTools: getAgentAllowedTools(AgentRole.Implementer, this._config.commands),
           timeout,
           onStderr: this.makeStderrHandler(AgentRole.Implementer),
         }, getSessionId);
@@ -484,7 +484,7 @@ export class LoopOrchestrator {
         const response = await this.executeWithSessionRotation({
           prompt: `[TDD REFACTOR PHASE] Improve code quality without changing behavior:\n${taskContext}\n\nAll tests MUST still pass after refactoring.`,
           systemPrompt: refactorPrompt,
-          allowedTools: getAgentAllowedTools(AgentRole.Implementer),
+          allowedTools: getAgentAllowedTools(AgentRole.Implementer, this._config.commands),
           timeout,
           onStderr: this.makeStderrHandler(AgentRole.Implementer),
         }, getSessionId);

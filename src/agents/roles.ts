@@ -1,5 +1,13 @@
 import { AgentRole } from "../config/schema.js";
 
+/** Project commands used to derive agent tool permissions */
+export interface AgentProjectCommands {
+  test: string;
+  lint: string;
+  build: string;
+  typecheck: string;
+}
+
 /** Definition of an agent's capabilities and constraints */
 export interface AgentDefinition {
   role: AgentRole;
@@ -50,8 +58,6 @@ Commit type: feat: or fix: depending on the change.`,
       "Edit",
       "Glob",
       "Grep",
-      "Bash(npm run build)",
-      "Bash(npm run typecheck)",
     ],
     qualityCriteria: [
       "All existing tests pass",
@@ -69,7 +75,7 @@ Focus on:
 - Cover happy paths, edge cases, and error paths
 - Test behavior, not implementation details
 - Meaningful test descriptions
-- Use vitest/jest patterns: describe, it, expect
+- Follow the project's existing test patterns and framework
 - Aim for high coverage without meaningless assertions
 - Include integration tests for module boundaries
 
@@ -80,9 +86,6 @@ Commit type: test: for new tests.`,
       "Edit",
       "Glob",
       "Grep",
-      "Bash(npm test)",
-      "Bash(npm run test:coverage)",
-      "Bash(npx vitest)",
     ],
     qualityCriteria: [
       "Tests cover edge cases",
@@ -134,8 +137,6 @@ Commit type: security: for fixes.`,
       "Edit",
       "Glob",
       "Grep",
-      "Bash(npm audit)",
-      "Bash(npx semgrep)",
     ],
     qualityCriteria: [
       "No critical vulnerabilities",
@@ -152,7 +153,7 @@ Focus on:
 - API documentation with examples
 - Architecture Decision Records (ADRs)
 - README and getting started guides
-- Inline code documentation (JSDoc/TSDoc) where non-obvious
+- Inline code documentation where non-obvious
 - CHANGELOG maintenance
 - Configuration documentation
 
@@ -164,7 +165,6 @@ Commit type: docs: for documentation changes.`,
       "Edit",
       "Glob",
       "Grep",
-      "Bash(npx typedoc)",
     ],
     qualityCriteria: [
       "Public APIs documented",
@@ -179,9 +179,61 @@ export function getAgentPrompt(role: AgentRole): string {
   return agentDefinitions[role].prompt;
 }
 
-/** Get the allowed tools for a specific agent role */
-export function getAgentAllowedTools(role: AgentRole): string[] {
-  return agentDefinitions[role].allowedTools;
+/**
+ * Get the allowed tools for a specific agent role.
+ *
+ * When project commands are provided, Bash tool permissions are derived
+ * from the actual test/lint/build/typecheck commands configured for the
+ * project (e.g. `cargo test` for Rust, `pytest` for Python) instead of
+ * being hardcoded to npm.
+ */
+export function getAgentAllowedTools(
+  role: AgentRole,
+  commands?: AgentProjectCommands
+): string[] {
+  const base = [...agentDefinitions[role].allowedTools];
+
+  if (!commands) return base;
+
+  const bashTool = (cmd: string) => `Bash(${cmd})`;
+
+  switch (role) {
+    case AgentRole.Implementer:
+      if (commands.build) base.push(bashTool(commands.build));
+      if (commands.typecheck) base.push(bashTool(commands.typecheck));
+      break;
+
+    case AgentRole.Tester:
+      if (commands.test) base.push(bashTool(commands.test));
+      break;
+
+    case AgentRole.Security:
+      // Derive audit command from project type
+      if (commands.test.startsWith("npm") || commands.test.startsWith("npx")) {
+        base.push(bashTool("npm audit"));
+      } else if (commands.test.startsWith("cargo")) {
+        base.push(bashTool("cargo audit"));
+      } else if (commands.test.startsWith("pytest") || commands.test.startsWith("python")) {
+        base.push(bashTool("pip-audit"));
+      }
+      break;
+
+    case AgentRole.Documenter:
+      // Docs tools vary by ecosystem
+      if (commands.test.startsWith("npm") || commands.test.startsWith("npx")) {
+        base.push(bashTool("npx typedoc"));
+      } else if (commands.test.startsWith("cargo")) {
+        base.push(bashTool("cargo doc"));
+      } else if (commands.test.startsWith("go ")) {
+        base.push(bashTool("go doc"));
+      }
+      break;
+
+    default:
+      break;
+  }
+
+  return base;
 }
 
 /** Get the full agent definition for a role */
