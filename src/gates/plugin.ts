@@ -99,7 +99,17 @@ export function createBuiltinGates(
         } catch (err) {
           const message =
             err instanceof Error ? err.message : "Tests failed";
-          return { passed: false, message };
+          // Detect fundamentally broken commands (not found, no package.json, etc.)
+          const isBrokenCommand =
+            message.includes("ENOENT") ||
+            message.includes("command not found") ||
+            message.includes("not recognized") ||
+            message.includes("Missing script") ||
+            message.includes("no such file");
+          const prefix = isBrokenCommand
+            ? `Command failed: ${options.testCommand}. Check .forge/forge.config.json commands.test — `
+            : "";
+          return { passed: false, message: `${prefix}${message}` };
         }
       },
     },

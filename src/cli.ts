@@ -276,6 +276,35 @@ program
       return;
     }
 
+    // Preflight: validate all required tools and dependencies
+    const { runPreflightChecks } = await import("./commands/preflight.js");
+    const preflight = runPreflightChecks(effectiveConfig, cwd);
+
+    if (!preflight.passed) {
+      console.error(chalk.bold.red("\n  Preflight checks failed:\n"));
+      for (const check of preflight.checks) {
+        if (!check.ok) {
+          console.error(chalk.red(`  ✗ ${check.message}`));
+          if (check.fix) {
+            for (const line of check.fix.split("\n")) {
+              console.error(chalk.gray(`    → ${line}`));
+            }
+          }
+          console.error();
+        }
+      }
+      const passed = preflight.checks.filter((c) => c.ok);
+      if (passed.length > 0) {
+        console.log(chalk.gray(`  ✓ ${passed.length} checks passed`));
+      }
+      console.error(
+        chalk.yellow(
+          "  Fix the issues above and run `forge run` again.\n"
+        )
+      );
+      process.exit(1);
+    }
+
     // Ensure git repo exists — forge relies on git for change tracking
     if (!existsSync(join(cwd, ".git"))) {
       try {

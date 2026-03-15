@@ -301,9 +301,12 @@ export class LoopOrchestrator {
       this.engine.recordFilesModified(filesModified);
       this._committedCount += commitsCreated;
 
-      // Update circuit breaker
+      // Update circuit breaker.
+      // When the pipeline failed (quality gates, phase error), count it as
+      // no progress even if files were modified — the work was wasted and
+      // retrying the same task will likely fail the same way.
       this.circuitBreaker.recordIteration({
-        filesModified: filesModified.length,
+        filesModified: pipelineResult.completed ? filesModified.length : 0,
         error: pipelineResult.error ?? null,
         testsPass: pipelineResult.gatesPassed,
       });
