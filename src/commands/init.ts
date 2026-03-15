@@ -238,6 +238,12 @@ function ensureGitRepo(projectRoot: string): void {
 
   try {
     execSync("git init", { cwd: projectRoot, stdio: "pipe" });
+    // Set fallback identity for environments without global git config (e.g. CI)
+    const gitCfg = { cwd: projectRoot, stdio: "pipe" as const };
+    try { execSync("git config user.email", gitCfg); } catch {
+      execSync('git config user.email "forge@local"', gitCfg);
+      execSync('git config user.name "Forge CLI"', gitCfg);
+    }
     execSync("git add -A", { cwd: projectRoot, stdio: "pipe" });
     execSync('git commit -m "chore: initialize project with forge"', {
       cwd: projectRoot,
