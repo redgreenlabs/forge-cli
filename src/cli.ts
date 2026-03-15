@@ -1,5 +1,5 @@
 import { Command } from "commander";
-import { readFileSync, existsSync } from "fs";
+import { readFileSync, writeFileSync, existsSync } from "fs";
 import { resolve, join } from "path";
 import chalk from "chalk";
 import { initProject } from "./commands/init.js";
@@ -274,6 +274,41 @@ program
         chalk.yellow("No tasks found. Run `forge import <prd>` first.")
       );
       return;
+    }
+
+    // Auto-detect technology from PRD if commands are still at defaults
+    const isDefaultCommands =
+      effectiveConfig.commands.test === "npm test" &&
+      effectiveConfig.commands.lint === "npm run lint" &&
+      effectiveConfig.commands.build === "npm run build";
+
+    if (isDefaultCommands) {
+      const prdSpecPath = join(forgeDir, "specs", "prd-original.md");
+      const prdJsonPath = join(forgeDir, "prd.json");
+      const prdPath = existsSync(prdSpecPath)
+        ? prdSpecPath
+        : existsSync(prdJsonPath)
+          ? prdJsonPath
+          : null;
+
+      if (prdPath) {
+        const { detectTechFromContent } = await import("./commands/import.js");
+        const prdContent = readFileSync(prdPath, "utf-8");
+        const detected = detectTechFromContent(prdContent);
+        if (detected) {
+          effectiveConfig.commands = { ...effectiveConfig.commands, ...detected };
+          // Also persist to config file so this only happens once
+          const configPath = join(forgeDir, "forge.config.json");
+          try {
+            const configData = JSON.parse(readFileSync(configPath, "utf-8"));
+            configData.commands = { ...configData.commands, ...detected };
+            writeFileSync(configPath, JSON.stringify(configData, null, 2) + "\n");
+            console.log(
+              chalk.gray(`  Auto-detected commands from PRD: test=${detected.test}, lint=${detected.lint}`)
+            );
+          } catch { /* non-fatal */ }
+        }
+      }
     }
 
     // Preflight: validate all required tools and dependencies
