@@ -304,6 +304,20 @@ function AgentLog({ entries, maxEntries = 8 }: { entries: AgentLogEntry[]; maxEn
   );
 }
 
+function RateLimitPanel({ waiting, now }: { waiting: { until: number; reason: string }; now: number }) {
+  const remainingMs = Math.max(0, waiting.until - now);
+  const minutes = Math.floor(remainingMs / 60000);
+  const seconds = Math.floor((remainingMs % 60000) / 1000);
+
+  return (
+    <Box flexDirection="column" marginBottom={1}>
+      <Text bold color="yellow">⏳ Rate Limit Pause:</Text>
+      <Text>{"  "}{waiting.reason}</Text>
+      <Text>{"  "}Resuming in: <Text bold>{String(minutes).padStart(2, "0")}:{String(seconds).padStart(2, "0")}</Text></Text>
+    </Box>
+  );
+}
+
 /**
  * Live Ink-based TUI dashboard component.
  *
@@ -337,7 +351,8 @@ function Dashboard({ state, startedAt }: { state: DashboardState; startedAt: num
   const coverageLines = state.coverage ? 4 : 0;
   const securityLines = state.security ? (state.security.critical + state.security.high + state.security.medium + state.security.low === 0 ? 2 : 2 + (state.security.critical > 0 ? 1 : 0) + (state.security.high > 0 ? 1 : 0) + (state.security.medium > 0 ? 1 : 0) + (state.security.low > 0 ? 1 : 0)) : 0;
   const codeMetricsLines = state.codeMetrics ? 3 + (state.codeMetrics.highComplexityCount > 0 ? 1 : 0) : 0;
-  const fixedLines = 12 + gateLines + coverageLines + securityLines + codeMetricsLines;
+  const rateLimitLines = state.rateLimitWaiting ? 3 : 0;
+  const fixedLines = 12 + gateLines + coverageLines + securityLines + codeMetricsLines + rateLimitLines;
   const availableForLog = Math.max(2, termHeight - fixedLines);
   const spinnerChar = WORK_INDICATORS[tick % WORK_INDICATORS.length];
 
@@ -351,6 +366,9 @@ function Dashboard({ state, startedAt }: { state: DashboardState; startedAt: num
         tddCycles={state.tddCycles}
         commitCount={state.commitCount}
       />
+      {state.rateLimitWaiting && (
+        <RateLimitPanel waiting={state.rateLimitWaiting} now={Date.now()} />
+      )}
       <QualityGatesPanel result={state.qualityReport} />
       <CoveragePanel coverage={state.coverage} />
       <SecurityPanel security={state.security} />
@@ -359,7 +377,12 @@ function Dashboard({ state, startedAt }: { state: DashboardState; startedAt: num
       <Box marginTop={1}>
         <Text color="gray">{"─".repeat(50)}</Text>
       </Box>
-      {state.loop.phase !== LoopPhase.Idle ? (
+      {state.rateLimitWaiting ? (
+        <Box>
+          <Text color="yellow">⏸ </Text>
+          <Text color="yellow">Waiting for rate limit cooldown...</Text>
+        </Box>
+      ) : state.loop.phase !== LoopPhase.Idle ? (
         <Box>
           <Text color="green">{spinnerChar} </Text>
           <Text color="gray">Claude is working...</Text>

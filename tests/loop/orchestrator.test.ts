@@ -32,7 +32,7 @@ vi.mock("../../src/gates/plugin.js", () => ({
 function makeClaudeResponse(overrides: Partial<ClaudeResponse> = {}): ClaudeResponse {
   return {
     status: "success",
-    exitSignal: false,
+    exitSignal: true,
     filesModified: ["src/feature.ts"],
     testsPass: true,
     testResults: { total: 5, passed: 5, failed: 0 },
@@ -56,7 +56,7 @@ describe("LoopOrchestrator", () => {
     overrides: Partial<OrchestratorOptions> = {}
   ): LoopOrchestrator {
     return new LoopOrchestrator({
-      config: { ...defaultConfig, maxIterations: 3 },
+      config: { ...defaultConfig, maxIterations: 3, exitSignalThreshold: 1 },
       executor,
       tasks: [
         {
@@ -237,7 +237,7 @@ describe("LoopOrchestrator", () => {
   describe("pre-completed tasks", () => {
     it("should pre-mark tasks with done status", () => {
       const orch = new LoopOrchestrator({
-        config: { ...defaultConfig, maxIterations: 3 },
+        config: { ...defaultConfig, maxIterations: 3, exitSignalThreshold: 1 },
         executor,
         tasks: [
           {
@@ -271,7 +271,7 @@ describe("LoopOrchestrator", () => {
   describe("no available tasks", () => {
     it("should handle when all tasks are already complete", async () => {
       const orch = new LoopOrchestrator({
-        config: { ...defaultConfig, maxIterations: 3 },
+        config: { ...defaultConfig, maxIterations: 3, exitSignalThreshold: 1 },
         executor,
         tasks: [
           {
@@ -303,7 +303,7 @@ describe("LoopOrchestrator", () => {
       };
 
       const orch = new LoopOrchestrator({
-        config: { ...defaultConfig, maxIterations: 3 },
+        config: { ...defaultConfig, maxIterations: 3, exitSignalThreshold: 1 },
         executor: capturingExecutor,
         tasks: [
           {
@@ -337,7 +337,7 @@ describe("LoopOrchestrator", () => {
       };
 
       const orch = new LoopOrchestrator({
-        config: { ...defaultConfig, maxIterations: 3 },
+        config: { ...defaultConfig, maxIterations: 3, exitSignalThreshold: 1 },
         executor: capturingExecutor,
         tasks: [
           {
@@ -368,6 +368,7 @@ describe("LoopOrchestrator", () => {
         config: {
           ...defaultConfig,
           maxIterations: 3,
+          exitSignalThreshold: 1,
           workspaces: [
             { name: "frontend", path: "packages/frontend", type: "node", test: "npm test", lint: "npm run lint" },
             { name: "backend", path: "packages/backend", type: "node", test: "npm test", lint: "npm run lint" },

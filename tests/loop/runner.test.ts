@@ -35,6 +35,7 @@ const safeConfig = {
   tdd: { ...defaultConfig.tdd, commitPerPhase: false },
   security: { ...defaultConfig.security, enabled: false },
   retry: { maxPhaseRetries: 0, retryDelayMs: 0 },
+  exitSignalThreshold: 1,
 };
 
 function mockExecutor(responses: Array<Partial<import("../../src/loop/orchestrator.js").ClaudeResponse>> = []) {
@@ -45,7 +46,7 @@ function mockExecutor(responses: Array<Partial<import("../../src/loop/orchestrat
       callCount++;
       return {
         status: "success",
-        exitSignal: false,
+        exitSignal: true,
         filesModified: ["file.ts"],
         testsPass: true,
         testResults: { total: 1, passed: 1, failed: 0 },

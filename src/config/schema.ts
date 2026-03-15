@@ -138,6 +138,10 @@ export const ForgeConfigSchema = z.object({
   sessionContinuity: z.boolean(),
   /** Session expiry in hours */
   sessionExpiryHours: z.number().positive(),
+  /** Minutes to wait when API rate limit is hit before retrying */
+  rateLimitWaitMinutes: z.number().int().positive(),
+  /** Number of consecutive exit signals required before accepting task completion */
+  exitSignalThreshold: z.number().int().min(1),
   /** TDD enforcement settings */
   tdd: TddConfigSchema,
   /** Code coverage settings */
@@ -169,6 +173,8 @@ export const defaultConfig: ForgeConfig = {
   timeoutMinutes: 15,
   sessionContinuity: true,
   sessionExpiryHours: 24,
+  rateLimitWaitMinutes: 60,
+  exitSignalThreshold: 2,
   tdd: {
     enabled: true,
     requireFailingTestFirst: true,

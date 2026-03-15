@@ -8,6 +8,8 @@ export interface PhaseResult {
   testsPass: boolean;
   testResults: { total: number; passed: number; failed: number };
   error: string | null;
+  /** Whether Claude signalled explicit completion (EXIT_SIGNAL) */
+  exitSignal?: boolean;
 }
 
 /** Security scan result */
@@ -54,6 +56,8 @@ export interface PipelinePhaseResult {
   securityPassed: boolean;
   gatesPassed: boolean;
   qualityReport?: PipelineResult;
+  /** Whether any phase produced an explicit EXIT_SIGNAL from Claude */
+  exitSignal: boolean;
 }
 
 /**
@@ -85,6 +89,7 @@ export class IterationPipeline {
     const allFiles: string[] = [];
     let commitsCreated = 0;
     const tddPhases: TddPhase[] = [];
+    let hasExitSignal = false;
 
     // === RED PHASE (write failing test) ===
     if (this.config.tddEnabled) {
@@ -100,6 +105,7 @@ export class IterationPipeline {
 
       allFiles.push(...redResult.filesModified);
       tddPhases.push(TddPhase.Red);
+      if (redResult.exitSignal) hasExitSignal = true;
 
       // Commit test
       if (this.config.autoCommit) {
@@ -122,6 +128,7 @@ export class IterationPipeline {
 
     allFiles.push(...greenResult.filesModified);
     tddPhases.push(TddPhase.Green);
+    if (greenResult.exitSignal) hasExitSignal = true;
 
     // Check tests pass after Green — retry the Green phase if tests fail
     if (this.config.tddEnabled && !greenResult.testsPass && this.maxRetries > 0) {
@@ -183,6 +190,7 @@ export class IterationPipeline {
         securityPassed,
         gatesPassed: false,
         qualityReport,
+        exitSignal: hasExitSignal,
       };
     }
 
@@ -215,6 +223,7 @@ export class IterationPipeline {
       securityPassed,
       gatesPassed,
       qualityReport,
+      exitSignal: hasExitSignal,
     };
   }
 
@@ -281,6 +290,7 @@ export class IterationPipeline {
       tddPhasesCompleted: tddPhases,
       securityPassed: true,
       gatesPassed: true,
+      exitSignal: false,
     };
   }
 }

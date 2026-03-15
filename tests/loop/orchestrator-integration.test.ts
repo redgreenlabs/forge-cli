@@ -32,7 +32,7 @@ vi.mock("../../src/gates/plugin.js", () => ({
 function makeClaudeResponse(overrides: Partial<ClaudeResponse> = {}): ClaudeResponse {
   return {
     status: "success",
-    exitSignal: false,
+    exitSignal: true,
     filesModified: ["src/feature.ts"],
     testsPass: true,
     testResults: { total: 5, passed: 5, failed: 0 },
@@ -56,7 +56,7 @@ describe("Orchestrator Integration", () => {
     overrides: Partial<OrchestratorOptions> = {}
   ): LoopOrchestrator {
     return new LoopOrchestrator({
-      config: { ...defaultConfig, maxIterations: 3 },
+      config: { ...defaultConfig, maxIterations: 3, exitSignalThreshold: 1 },
       executor,
       tasks: [
         {

@@ -59,6 +59,8 @@ export interface ClaudeResponse {
   resultText?: string;
   /** Whether the error was caused by context window exhaustion */
   contextExhausted?: boolean;
+  /** Whether the error was caused by API rate limiting */
+  rateLimited?: boolean;
 }
 
 /** Options for creating a LoopOrchestrator */
@@ -93,6 +95,8 @@ export interface DashboardState {
   coverage?: CoverageMetrics;
   /** Security scan findings summary */
   security?: SecurityMetrics;
+  /** Rate limit wait state (when pausing for API cooldown) */
+  rateLimitWaiting?: { until: number; reason: string };
 }
 
 /**
@@ -131,6 +135,8 @@ export class LoopOrchestrator {
   private _extraSystemContext: string;
   private _codeMetrics?: CodeQualityMetrics;
   private _securityMetrics?: SecurityMetrics;
+  private _rateLimitWaiting?: { until: number; reason: string };
+  private _exitSignalCount = new Map<string, number>();
 
   constructor(options: OrchestratorOptions) {
     this._config = options.config;
@@ -327,18 +333,39 @@ export class LoopOrchestrator {
         this._qualityReport = pipelineResult.qualityReport;
       }
 
-      // Mark task complete and record handoff for next iteration
+      // Dual-condition exit: require BOTH pipeline success AND exit signal
+      // to mark a task complete. This prevents premature completion when
+      // Claude says "done" but the task isn't actually finished.
       if (pipelineResult.completed && currentTask) {
-        this.markTaskComplete(currentTask.id);
-        this.logAgent("system", "task-done", `Completed task: ${currentTask.title}`);
+        const taskId = currentTask.id;
 
-        this._handoffContext.add({
-          from: agentRole,
-          to: AgentRole.Implementer,
-          summary: `Completed: ${currentTask.title}`,
-          artifacts: filesModified,
-          priority: HandoffPriority.Normal,
-        });
+        if (pipelineResult.exitSignal) {
+          const count = (this._exitSignalCount.get(taskId) ?? 0) + 1;
+          this._exitSignalCount.set(taskId, count);
+
+          if (count >= this._config.exitSignalThreshold) {
+            this.markTaskComplete(taskId);
+            this.logAgent("system", "task-done",
+              `Completed task: ${currentTask.title} (${count} exit signal${count > 1 ? "s" : ""})`);
+            this._exitSignalCount.delete(taskId);
+
+            this._handoffContext.add({
+              from: agentRole,
+              to: AgentRole.Implementer,
+              summary: `Completed: ${currentTask.title}`,
+              artifacts: filesModified,
+              priority: HandoffPriority.Normal,
+            });
+          } else {
+            this.logAgent("system", "awaiting-confirmation",
+              `Pipeline passed, ${this._config.exitSignalThreshold - count} more exit signal(s) needed: ${currentTask.title}`);
+          }
+        } else {
+          // Pipeline succeeded but no exit signal — reset consecutive count
+          this._exitSignalCount.set(taskId, 0);
+          this.logAgent("system", "no-exit-signal",
+            `Pipeline passed but no completion signal from Claude: ${currentTask.title}`);
+        }
       }
 
       // Refresh code metrics after files changed
@@ -414,6 +441,7 @@ export class LoopOrchestrator {
           testsPass: response.testsPass,
           testResults: response.testResults,
           error: response.error,
+          exitSignal: response.exitSignal,
         };
       },
 
@@ -443,6 +471,7 @@ export class LoopOrchestrator {
           testsPass: response.testsPass,
           testResults: response.testResults,
           error: response.error,
+          exitSignal: response.exitSignal,
         };
       },
 
@@ -472,6 +501,7 @@ export class LoopOrchestrator {
           testsPass: response.testsPass,
           testResults: response.testResults,
           error: response.error,
+          exitSignal: response.exitSignal,
         };
       },
 
@@ -624,7 +654,25 @@ export class LoopOrchestrator {
     if (response.contextExhausted && this._sessionId) {
       this.logAgent("system", "session", "Context window exhausted — rotating to fresh session");
       this._sessionId = undefined;
-      // Retry with fresh session (no --continue)
+      return this._executor.execute({
+        ...options,
+        sessionId: undefined,
+      });
+    }
+
+    if (response.rateLimited) {
+      const waitMs = this._config.rateLimitWaitMinutes * 60 * 1000;
+      const until = Date.now() + waitMs;
+      this.logAgent("system", "rate-limited",
+        `API rate limit hit — waiting ${this._config.rateLimitWaitMinutes} minutes`);
+      this._rateLimitWaiting = { until, reason: "API rate limit reached" };
+      this.emitDashboardUpdate();
+
+      await this.waitWithCountdown(waitMs);
+
+      this._rateLimitWaiting = undefined;
+      this._sessionId = undefined;
+      this.emitDashboardUpdate();
       return this._executor.execute({
         ...options,
         sessionId: undefined,
@@ -637,6 +685,18 @@ export class LoopOrchestrator {
   /** Rotate to a fresh Claude session */
   rotateSession(): void {
     this._sessionId = undefined;
+  }
+
+  /** Wait with periodic dashboard updates for countdown display */
+  private async waitWithCountdown(totalMs: number): Promise<void> {
+    const intervalMs = 10_000;
+    let remaining = totalMs;
+    while (remaining > 0) {
+      const sleepTime = Math.min(intervalMs, remaining);
+      await new Promise((resolve) => setTimeout(resolve, sleepTime));
+      remaining -= sleepTime;
+      this.emitDashboardUpdate();
+    }
   }
 
   private logAgent(agent: string, action: string, detail: string): void {
@@ -747,6 +807,7 @@ export class LoopOrchestrator {
       commitCount: this._committedCount,
       codeMetrics: this._codeMetrics,
       security: this._securityMetrics,
+      rateLimitWaiting: this._rateLimitWaiting,
     });
   }
 }

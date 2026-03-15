@@ -88,6 +88,9 @@ export function parseClaudeResponse(raw: RawClaudeOutput): ClaudeResponse {
       errorText.includes("exceed context limit") ||
       errorText.includes("context_length_exceeded") ||
       errorText.includes("maximum context length");
+    // Layer 2 & 3: Rate limit detection from error text
+    // Layer 3: exit code 124 is a process timeout, NOT an API rate limit
+    const isRateLimited = raw.exitCode !== 124 && detectRateLimitInText(errorText);
     return {
       status: "error",
       exitSignal: false,
@@ -96,6 +99,7 @@ export function parseClaudeResponse(raw: RawClaudeOutput): ClaudeResponse {
       testResults: { total: 0, passed: 0, failed: 0 },
       error: errorText,
       contextExhausted: isContextLimit,
+      rateLimited: isRateLimited,
     };
   }
 
@@ -114,6 +118,20 @@ export function parseClaudeResponse(raw: RawClaudeOutput): ClaudeResponse {
     }
   } catch {
     resultText = raw.stdout;
+  }
+
+  // Layer 1: Check for rate_limit_event in structured JSON output
+  const rateLimitedFromJson = detectRateLimitInItems(conversationItems);
+  if (rateLimitedFromJson) {
+    return {
+      status: "error",
+      exitSignal: false,
+      filesModified: [],
+      testsPass: false,
+      testResults: { total: 0, passed: 0, failed: 0 },
+      error: "API rate limit reached (rate_limit_event detected)",
+      rateLimited: true,
+    };
   }
 
   // Extract file paths from tool_use entries (Write, Edit, Read operations)
@@ -279,6 +297,46 @@ function extractStatusBlock(
     }
   }
   return block;
+}
+
+/**
+ * Detect API rate limit indicators in text output.
+ * Layer 2: Pattern matching on error messages.
+ */
+function detectRateLimitInText(text: string): boolean {
+  const lower = text.toLowerCase();
+  return (
+    lower.includes("5 hour limit") ||
+    lower.includes("usage limit reached") ||
+    lower.includes("rate limit") ||
+    /limit reached.*try back/i.test(text)
+  );
+}
+
+/**
+ * Detect rate_limit_event in Claude CLI structured JSON output.
+ * Layer 1: Structural detection from conversation items.
+ */
+function detectRateLimitInItems(items: ConversationItem[]): boolean {
+  for (const item of items) {
+    // Check for rate_limit_event type
+    if (item.type === "rate_limit_event") return true;
+
+    // Check content for rate limit indicators
+    const contentStr =
+      typeof item.content === "string"
+        ? item.content
+        : Array.isArray(item.content)
+          ? JSON.stringify(item.content)
+          : "";
+    if (
+      contentStr.includes("rate_limit_event") &&
+      contentStr.includes('"rejected"')
+    ) {
+      return true;
+    }
+  }
+  return false;
 }
 
 /**
