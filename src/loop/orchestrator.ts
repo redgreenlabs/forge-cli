@@ -28,6 +28,11 @@ import {
   type PhaseResult,
 } from "./pipeline.js";
 import { computeCodeMetrics } from "../metrics/code-metrics.js";
+import {
+  getHeadSha,
+  detectFilesFromCommits,
+  countCommitsBetween,
+} from "./executor.js";
 
 /** Claude Code execution interface */
 export interface ClaudeExecutor {
@@ -246,6 +251,9 @@ export class LoopOrchestrator {
       // Build phase executor that delegates to Claude
       const phaseExecutor = this.buildPhaseExecutor(currentTask, handoffPrompt);
 
+      // Snapshot HEAD before the iteration to detect commits made by Claude
+      const headBefore = getHeadSha(this._projectRoot);
+
       // Create and run the iteration pipeline
       const pipeline = new IterationPipeline({
         tddEnabled: this._config.tdd.enabled,
@@ -264,13 +272,31 @@ export class LoopOrchestrator {
         }
       );
 
+      // Reconcile: if pipeline reports 0 files but git shows commits were made,
+      // use git to detect the actual files changed. This handles the case where
+      // Claude commits files during execution, making them invisible to git status.
+      let filesModified = pipelineResult.filesModified;
+      let commitsCreated = pipelineResult.commitsCreated;
+
+      if (headBefore) {
+        const gitCommitCount = countCommitsBetween(this._projectRoot, headBefore);
+        if (gitCommitCount > 0) {
+          if (filesModified.length === 0) {
+            filesModified = detectFilesFromCommits(this._projectRoot, headBefore);
+          }
+          if (commitsCreated === 0) {
+            commitsCreated = gitCommitCount;
+          }
+        }
+      }
+
       // Record results
-      this.engine.recordFilesModified(pipelineResult.filesModified);
-      this._committedCount += pipelineResult.commitsCreated;
+      this.engine.recordFilesModified(filesModified);
+      this._committedCount += commitsCreated;
 
       // Update circuit breaker
       this.circuitBreaker.recordIteration({
-        filesModified: pipelineResult.filesModified.length,
+        filesModified: filesModified.length,
         error: pipelineResult.error ?? null,
         testsPass: pipelineResult.gatesPassed,
       });
@@ -290,20 +316,20 @@ export class LoopOrchestrator {
           from: agentRole,
           to: AgentRole.Implementer,
           summary: `Completed: ${currentTask.title}`,
-          artifacts: pipelineResult.filesModified,
+          artifacts: filesModified,
           priority: HandoffPriority.Normal,
         });
       }
 
       // Refresh code metrics after files changed
-      if (pipelineResult.filesModified.length > 0) {
+      if (filesModified.length > 0) {
         this.refreshCodeMetrics();
       }
 
       this.logAgent(
         agentRole,
         pipelineResult.completed ? "completed" : "failed",
-        pipelineResult.error ?? `${pipelineResult.filesModified.length} files, ${pipelineResult.commitsCreated} commits`
+        pipelineResult.error ?? `${filesModified.length} files, ${commitsCreated} commits`
       );
     } catch (error) {
       const err =

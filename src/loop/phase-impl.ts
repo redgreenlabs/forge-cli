@@ -86,10 +86,6 @@ export async function commitPhase(
   projectRoot: string,
   taskId?: string
 ): Promise<CommitResult> {
-  if (files.length === 0) {
-    return { committed: false, message: "No files to commit" };
-  }
-
   const plan = CommitOrchestrator.planForPhase(phase, {
     taskId,
     files,
@@ -99,7 +95,10 @@ export async function commitPhase(
   try {
     const { execSync } = await import("child_process");
 
-    // Get all changed/untracked files via git status, excluding forge internals
+    // Get all changed/untracked files via git status, excluding forge internals.
+    // Always check git status even if `files` is empty — Claude may have modified
+    // files that weren't tracked by the executor (e.g. when --output-format json
+    // doesn't include tool_use entries).
     const statusOutput = execSync("git status --porcelain -u", {
       cwd: projectRoot,
       encoding: "utf-8",

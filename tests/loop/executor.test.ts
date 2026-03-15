@@ -8,6 +8,9 @@ import {
   parseClaudeResponse,
   buildClaudeArgs,
   detectChangedFiles,
+  getHeadSha,
+  detectFilesFromCommits,
+  countCommitsBetween,
   type ClaudeExecOptions,
   type RawClaudeOutput,
 } from "../../src/loop/executor.js";
@@ -493,6 +496,111 @@ EXIT_SIGNAL: false
     });
   });
 
+  describe("getHeadSha", () => {
+    let tmpDir: string;
+
+    beforeEach(() => {
+      tmpDir = mkdtempSync(join(tmpdir(), "forge-headsha-"));
+      execSync("git init", { cwd: tmpDir, stdio: "pipe" });
+      execSync('git config user.email "test@test.com"', { cwd: tmpDir, stdio: "pipe" });
+      execSync('git config user.name "Test"', { cwd: tmpDir, stdio: "pipe" });
+      writeFileSync(join(tmpDir, "initial.ts"), "export const x = 1;");
+      execSync("git add -A && git commit -m 'init'", { cwd: tmpDir, stdio: "pipe" });
+    });
+
+    afterEach(() => {
+      rmSync(tmpDir, { recursive: true, force: true });
+    });
+
+    it("should return a valid SHA", () => {
+      const sha = getHeadSha(tmpDir);
+      expect(sha).toMatch(/^[0-9a-f]{40}$/);
+    });
+
+    it("should return null for non-git directory", () => {
+      const nonGitDir = mkdtempSync(join(tmpdir(), "forge-nogit-"));
+      const sha = getHeadSha(nonGitDir);
+      expect(sha).toBeNull();
+      rmSync(nonGitDir, { recursive: true, force: true });
+    });
+  });
+
+  describe("detectFilesFromCommits", () => {
+    let tmpDir: string;
+
+    beforeEach(() => {
+      tmpDir = mkdtempSync(join(tmpdir(), "forge-commitfiles-"));
+      execSync("git init", { cwd: tmpDir, stdio: "pipe" });
+      execSync('git config user.email "test@test.com"', { cwd: tmpDir, stdio: "pipe" });
+      execSync('git config user.name "Test"', { cwd: tmpDir, stdio: "pipe" });
+      writeFileSync(join(tmpDir, "initial.ts"), "export const x = 1;");
+      execSync("git add -A && git commit -m 'init'", { cwd: tmpDir, stdio: "pipe" });
+    });
+
+    afterEach(() => {
+      rmSync(tmpDir, { recursive: true, force: true });
+    });
+
+    it("should detect files changed in new commits", () => {
+      const beforeSha = getHeadSha(tmpDir)!;
+      writeFileSync(join(tmpDir, "new.ts"), "export const y = 2;");
+      execSync("git add -A && git commit -m 'add new'", { cwd: tmpDir, stdio: "pipe" });
+
+      const files = detectFilesFromCommits(tmpDir, beforeSha);
+      expect(files).toContain("new.ts");
+    });
+
+    it("should detect files across multiple commits", () => {
+      const beforeSha = getHeadSha(tmpDir)!;
+      writeFileSync(join(tmpDir, "a.ts"), "a");
+      execSync("git add -A && git commit -m 'add a'", { cwd: tmpDir, stdio: "pipe" });
+      writeFileSync(join(tmpDir, "b.ts"), "b");
+      execSync("git add -A && git commit -m 'add b'", { cwd: tmpDir, stdio: "pipe" });
+
+      const files = detectFilesFromCommits(tmpDir, beforeSha);
+      expect(files).toContain("a.ts");
+      expect(files).toContain("b.ts");
+    });
+
+    it("should return empty when no new commits", () => {
+      const sha = getHeadSha(tmpDir)!;
+      const files = detectFilesFromCommits(tmpDir, sha);
+      expect(files).toEqual([]);
+    });
+  });
+
+  describe("countCommitsBetween", () => {
+    let tmpDir: string;
+
+    beforeEach(() => {
+      tmpDir = mkdtempSync(join(tmpdir(), "forge-countcommits-"));
+      execSync("git init", { cwd: tmpDir, stdio: "pipe" });
+      execSync('git config user.email "test@test.com"', { cwd: tmpDir, stdio: "pipe" });
+      execSync('git config user.name "Test"', { cwd: tmpDir, stdio: "pipe" });
+      writeFileSync(join(tmpDir, "initial.ts"), "export const x = 1;");
+      execSync("git add -A && git commit -m 'init'", { cwd: tmpDir, stdio: "pipe" });
+    });
+
+    afterEach(() => {
+      rmSync(tmpDir, { recursive: true, force: true });
+    });
+
+    it("should count new commits", () => {
+      const beforeSha = getHeadSha(tmpDir)!;
+      writeFileSync(join(tmpDir, "a.ts"), "a");
+      execSync("git add -A && git commit -m 'add a'", { cwd: tmpDir, stdio: "pipe" });
+      writeFileSync(join(tmpDir, "b.ts"), "b");
+      execSync("git add -A && git commit -m 'add b'", { cwd: tmpDir, stdio: "pipe" });
+
+      expect(countCommitsBetween(tmpDir, beforeSha)).toBe(2);
+    });
+
+    it("should return 0 when no new commits", () => {
+      const sha = getHeadSha(tmpDir)!;
+      expect(countCommitsBetween(tmpDir, sha)).toBe(0);
+    });
+  });
+
   describe("ClaudeCodeExecutor", () => {
     let tmpDir: string;
 
@@ -576,6 +684,31 @@ EXIT_SIGNAL: false
 
       expect(result.status).toBe("success");
       expect(result.filesModified).toContain("new-file.ts");
+    });
+
+    it("should detect files from commits when claude commits during execution", async () => {
+      // Script that creates a file, commits it, and outputs valid JSON
+      const scriptPath = join(tmpDir, "mock-claude-commit.sh");
+      writeFileSync(scriptPath, [
+        "#!/bin/bash",
+        `echo 'export const z = 3;' > "${tmpDir}/committed-file.ts"`,
+        `cd "${tmpDir}"`,
+        `git add -A`,
+        `git commit -m 'feat: add committed-file'`,
+        `echo '{"result":"done"}'`,
+      ].join("\n"));
+      execSync(`chmod +x ${scriptPath}`, { stdio: "pipe" });
+
+      const exec = new ClaudeCodeExecutor(scriptPath, false, tmpDir);
+      const result = await exec.execute({
+        prompt: "test",
+        systemPrompt: "",
+        allowedTools: [],
+        timeout: 5000,
+      });
+
+      expect(result.status).toBe("success");
+      expect(result.filesModified).toContain("committed-file.ts");
     });
   });
 });

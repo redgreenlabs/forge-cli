@@ -227,7 +227,7 @@ describe("commitPhase", () => {
       tmpDir
     );
     expect(result.committed).toBe(false);
-    expect(result.message).toBe("No files to commit");
+    expect(result.message).toBe("No source files changed");
   });
 
   it("should commit with correct type for Red phase", async () => {

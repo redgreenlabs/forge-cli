@@ -300,6 +300,68 @@ export function detectChangedFiles(projectRoot: string): string[] {
 }
 
 /**
+ * Get the current HEAD commit SHA.
+ *
+ * Used to snapshot before/after an execution to detect commits
+ * made by Claude during the run.
+ */
+export function getHeadSha(projectRoot: string): string | null {
+  try {
+    return execSync("git rev-parse HEAD", {
+      cwd: projectRoot,
+      encoding: "utf-8",
+      stdio: ["pipe", "pipe", "pipe"],
+    }).trim();
+  } catch {
+    return null;
+  }
+}
+
+/**
+ * Detect files changed between two commits using git diff.
+ *
+ * Returns file paths that were modified, added, or deleted in commits
+ * between `fromSha` and HEAD. This catches files that were already
+ * committed by Claude during execution (which `git status` would miss).
+ */
+export function detectFilesFromCommits(
+  projectRoot: string,
+  fromSha: string
+): string[] {
+  try {
+    const output = execSync(`git diff --name-only ${fromSha}..HEAD`, {
+      cwd: projectRoot,
+      encoding: "utf-8",
+      stdio: ["pipe", "pipe", "pipe"],
+    });
+    return output
+      .split("\n")
+      .filter((line) => line.trim().length > 0);
+  } catch {
+    return [];
+  }
+}
+
+/**
+ * Count commits between two SHAs.
+ */
+export function countCommitsBetween(
+  projectRoot: string,
+  fromSha: string
+): number {
+  try {
+    const output = execSync(`git rev-list --count ${fromSha}..HEAD`, {
+      cwd: projectRoot,
+      encoding: "utf-8",
+      stdio: ["pipe", "pipe", "pipe"],
+    });
+    return parseInt(output.trim(), 10) || 0;
+  } catch {
+    return 0;
+  }
+}
+
+/**
  * Claude Code executor that spawns the CLI process.
  *
  * Uses `child_process.spawn` to run `claude` with constructed arguments.
@@ -332,8 +394,9 @@ export class ClaudeCodeExecutor {
       process.stderr.write(`[forge] stdin=ignore, CLAUDECODE stripped\n`);
     }
 
-    // Snapshot changed files before execution to diff later
+    // Snapshot changed files and HEAD commit before execution to diff later
     const filesBefore = new Set(detectChangedFiles(this.projectRoot));
+    const headBefore = getHeadSha(this.projectRoot);
 
     const { spawn } = await import("child_process");
 
@@ -382,12 +445,25 @@ export class ClaudeCodeExecutor {
 
         // Detect files changed by this execution via git
         if (response.status === "success" && response.filesModified.length === 0) {
+          // First check uncommitted changes (git status)
           const filesAfter = detectChangedFiles(this.projectRoot);
           const newFiles = filesAfter.filter((f) => !filesBefore.has(f));
           if (newFiles.length > 0) {
             response.filesModified = newFiles;
             if (this.verbose) {
-              process.stderr.write(`[forge] Detected ${newFiles.length} changed files via git: ${newFiles.join(", ")}\n`);
+              process.stderr.write(`[forge] Detected ${newFiles.length} changed files via git status: ${newFiles.join(", ")}\n`);
+            }
+          }
+
+          // Also check files changed in commits made during execution
+          // (Claude may have committed files, making them invisible to git status)
+          if (response.filesModified.length === 0 && headBefore) {
+            const committedFiles = detectFilesFromCommits(this.projectRoot, headBefore);
+            if (committedFiles.length > 0) {
+              response.filesModified = committedFiles;
+              if (this.verbose) {
+                process.stderr.write(`[forge] Detected ${committedFiles.length} files from new commits: ${committedFiles.join(", ")}\n`);
+              }
             }
           }
         }
