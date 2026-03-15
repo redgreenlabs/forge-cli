@@ -7,7 +7,7 @@ import { TddPhase } from "../tdd/enforcer.js";
 import { GateStatus } from "../gates/quality-gates.js";
 import type { DashboardState } from "../loop/orchestrator.js";
 import type { PipelineResult } from "../gates/quality-gates.js";
-import type { AgentLogEntry, CodeQualityMetrics } from "../tui/renderer.js";
+import type { AgentLogEntry, CodeQualityMetrics, CoverageMetrics, SecurityMetrics } from "../tui/renderer.js";
 
 /** Hook to track terminal dimensions */
 function useTerminalHeight(): number {
@@ -222,6 +222,52 @@ function CodeMetricsPanel({ metrics }: { metrics?: CodeQualityMetrics }) {
   );
 }
 
+function CoveragePanel({ coverage }: { coverage?: CoverageMetrics }) {
+  if (!coverage) return null;
+
+  const colorFor = (v: number): string => (v >= 80 ? "green" : v >= 60 ? "yellow" : "red");
+  const trendIcon = coverage.trend === "up" ? "↑" : coverage.trend === "down" ? "↓" : "→";
+  const trendColor = coverage.trend === "up" ? "green" : coverage.trend === "down" ? "red" : "gray";
+
+  return (
+    <Box flexDirection="column" marginBottom={1}>
+      <Text bold>Coverage:</Text>
+      <Text>
+        {"  "}<Text bold>Lines:</Text>     <Text color={colorFor(coverage.lines)}>{coverage.lines}%</Text>{" "}
+        <Text color={trendColor}>{trendIcon}</Text>
+      </Text>
+      <Text>
+        {"  "}<Text bold>Branches:</Text>  <Text color={colorFor(coverage.branches)}>{coverage.branches}%</Text>
+      </Text>
+      <Text>
+        {"  "}<Text bold>Functions:</Text> <Text color={colorFor(coverage.functions)}>{coverage.functions}%</Text>
+      </Text>
+    </Box>
+  );
+}
+
+function SecurityPanel({ security }: { security?: SecurityMetrics }) {
+  if (!security) return null;
+
+  const total = security.critical + security.high + security.medium + security.low;
+
+  return (
+    <Box flexDirection="column" marginBottom={1}>
+      <Text bold>Security:</Text>
+      {total === 0 ? (
+        <Text color="green">{"  "}✓ No findings</Text>
+      ) : (
+        <>
+          {security.critical > 0 && <Text color="red">{"  "}✗ {security.critical} CRITICAL</Text>}
+          {security.high > 0 && <Text color="red">{"  "}⚠ {security.high} HIGH</Text>}
+          {security.medium > 0 && <Text color="yellow">{"  "}{security.medium} MEDIUM</Text>}
+          {security.low > 0 && <Text color="gray">{"  "}{security.low} LOW</Text>}
+        </>
+      )}
+    </Box>
+  );
+}
+
 function AgentLog({ entries, maxEntries = 8 }: { entries: AgentLogEntry[]; maxEntries?: number }) {
   const recent = entries.slice(-maxEntries);
   const agentColors: Record<string, string> = {
@@ -288,7 +334,10 @@ function Dashboard({ state, startedAt }: { state: DashboardState; startedAt: num
   //   + status row(1) + agent header(1) + separator(1) + spinner(1) = ~12
   // Quality gates take variable lines.
   const gateLines = state.qualityReport ? state.qualityReport.results.length + 1 : 0;
-  const fixedLines = 12 + gateLines;
+  const coverageLines = state.coverage ? 4 : 0;
+  const securityLines = state.security ? (state.security.critical + state.security.high + state.security.medium + state.security.low === 0 ? 2 : 2 + (state.security.critical > 0 ? 1 : 0) + (state.security.high > 0 ? 1 : 0) + (state.security.medium > 0 ? 1 : 0) + (state.security.low > 0 ? 1 : 0)) : 0;
+  const codeMetricsLines = state.codeMetrics ? 3 + (state.codeMetrics.highComplexityCount > 0 ? 1 : 0) : 0;
+  const fixedLines = 12 + gateLines + coverageLines + securityLines + codeMetricsLines;
   const availableForLog = Math.max(2, termHeight - fixedLines);
   const spinnerChar = WORK_INDICATORS[tick % WORK_INDICATORS.length];
 
@@ -303,6 +352,8 @@ function Dashboard({ state, startedAt }: { state: DashboardState; startedAt: num
         commitCount={state.commitCount}
       />
       <QualityGatesPanel result={state.qualityReport} />
+      <CoveragePanel coverage={state.coverage} />
+      <SecurityPanel security={state.security} />
       <CodeMetricsPanel metrics={state.codeMetrics} />
       <AgentLog entries={state.agentLog} maxEntries={availableForLog} />
       <Box marginTop={1}>
@@ -369,4 +420,4 @@ export function startLiveDashboard(
   };
 }
 
-export { Dashboard };
+export { Dashboard, CoveragePanel, SecurityPanel };

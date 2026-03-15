@@ -18,7 +18,7 @@ import { TddEnforcer, TddPhase } from "../tdd/enforcer.js";
 import { TaskGraph, type TaskNode } from "../prd/task-graph.js";
 import type { PrdTask } from "../prd/parser.js";
 import type { PipelineResult } from "../gates/quality-gates.js";
-import type { AgentLogEntry, CodeQualityMetrics } from "../tui/renderer.js";
+import type { AgentLogEntry, CodeQualityMetrics, CoverageMetrics, SecurityMetrics } from "../tui/renderer.js";
 import { HandoffContext, HandoffPriority } from "../agents/handoff.js";
 import { TeamComposer } from "../agents/team.js";
 import type { WarningPanelData } from "../tui/error-panel.js";
@@ -86,6 +86,10 @@ export interface DashboardState {
   commitCount: number;
   /** Code quality metrics (complexity + test ratio) */
   codeMetrics?: CodeQualityMetrics;
+  /** Coverage metrics from last test run */
+  coverage?: CoverageMetrics;
+  /** Security scan findings summary */
+  security?: SecurityMetrics;
 }
 
 /**
@@ -122,6 +126,7 @@ export class LoopOrchestrator {
   private _currentTaskName?: string;
   private _extraSystemContext: string;
   private _codeMetrics?: CodeQualityMetrics;
+  private _securityMetrics?: SecurityMetrics;
 
   constructor(options: OrchestratorOptions) {
     this._config = options.config;
@@ -471,6 +476,16 @@ export class LoopOrchestrator {
         this.logAgent(AgentRole.Security, "scanning", "Running security scan");
         const phaseImpl = await import("./phase-impl.js");
         const result = phaseImpl.scanFilesForSecurity(allFilesModified, this._projectRoot);
+        // Update security metrics for dashboard
+        const counts: SecurityMetrics = { critical: 0, high: 0, medium: 0, low: 0 };
+        for (const f of result.findings) {
+          const sev = (f.severity ?? "medium").toLowerCase();
+          if (sev === "critical") counts.critical++;
+          else if (sev === "high") counts.high++;
+          else if (sev === "low") counts.low++;
+          else counts.medium++;
+        }
+        this._securityMetrics = counts;
         if (!result.passed) {
           this.logAgent(AgentRole.Security, "findings", `${result.findings.length} issues found`);
         }
@@ -690,6 +705,7 @@ export class LoopOrchestrator {
       currentTask: this._currentTaskName,
       commitCount: this._committedCount,
       codeMetrics: this._codeMetrics,
+      security: this._securityMetrics,
     });
   }
 }
