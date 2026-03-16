@@ -144,7 +144,6 @@ export class LoopOrchestrator {
   private _codeMetrics?: CodeQualityMetrics;
   private _securityMetrics?: SecurityMetrics;
   private _rateLimitWaiting?: { until: number; reason: string };
-  private _exitSignalCount = new Map<string, number>();
   private _taskFailureCounts = new Map<string, number>();
   private _claudeLogs: string[] = [];
   private static readonly MAX_CLAUDE_LOGS = 200;
@@ -344,39 +343,21 @@ export class LoopOrchestrator {
         this._qualityReport = pipelineResult.qualityReport;
       }
 
-      // Dual-condition exit: require BOTH pipeline success AND exit signal
-      // to mark a task complete. This prevents premature completion when
-      // Claude says "done" but the task isn't actually finished.
+      // Mark task complete when the pipeline succeeds.
+      // A successful TDD cycle (test + implementation + refactor + quality gates)
+      // IS the completion signal — no need for a separate exit signal from Claude.
       if (pipelineResult.completed && currentTask) {
-        const taskId = currentTask.id;
+        this.markTaskComplete(currentTask.id);
+        this.logAgent("system", "task-done",
+          `Completed task: ${currentTask.title}`);
 
-        if (pipelineResult.exitSignal) {
-          const count = (this._exitSignalCount.get(taskId) ?? 0) + 1;
-          this._exitSignalCount.set(taskId, count);
-
-          if (count >= this._config.exitSignalThreshold) {
-            this.markTaskComplete(taskId);
-            this.logAgent("system", "task-done",
-              `Completed task: ${currentTask.title} (${count} exit signal${count > 1 ? "s" : ""})`);
-            this._exitSignalCount.delete(taskId);
-
-            this._handoffContext.add({
-              from: agentRole,
-              to: AgentRole.Implementer,
-              summary: `Completed: ${currentTask.title}`,
-              artifacts: filesModified,
-              priority: HandoffPriority.Normal,
-            });
-          } else {
-            this.logAgent("system", "awaiting-confirmation",
-              `Pipeline passed, ${this._config.exitSignalThreshold - count} more exit signal(s) needed: ${currentTask.title}`);
-          }
-        } else {
-          // Pipeline succeeded but no exit signal — reset consecutive count
-          this._exitSignalCount.set(taskId, 0);
-          this.logAgent("system", "no-exit-signal",
-            `Pipeline passed but no completion signal from Claude: ${currentTask.title}`);
-        }
+        this._handoffContext.add({
+          from: agentRole,
+          to: AgentRole.Implementer,
+          summary: `Completed: ${currentTask.title}`,
+          artifacts: filesModified,
+          priority: HandoffPriority.Normal,
+        });
       }
 
       // Refresh code metrics after files changed
