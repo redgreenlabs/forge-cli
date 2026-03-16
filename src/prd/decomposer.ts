@@ -37,6 +37,10 @@ const COMPOUND_WORDS = /\b(and|with|including|plus|along\s+with|as\s+well\s+as)\
 const SCOPE_KEYWORDS =
   /\b(full|complete|comprehensive|entire|all|end-to-end|e2e|production-ready)\b/gi;
 
+/** Technical complexity keywords — features that typically require multiple TDD cycles */
+const TECH_COMPLEXITY_KEYWORDS =
+  /\b(chart|visualization|render|dashboard|animation|real-?time|websocket|authentication|oauth|database|migration|parser|compiler|interpreter|sunburst|treemap|graph|canvas|svg|3d|encrypt|sync|stream|pipeline|scheduler|cache|index|search|query|drag.?and.?drop|editor|rich.?text)\b/gi;
+
 /**
  * Estimate a task's complexity on a 1–10 scale using local heuristics.
  *
@@ -45,6 +49,8 @@ const SCOPE_KEYWORDS =
  * - Number of acceptance criteria
  * - Compound conjunctions ("and", "with", "including")
  * - Scope-expanding keywords ("full", "complete", "comprehensive")
+ * - Technical complexity keywords (chart, visualization, database, etc.)
+ * - Underspecified tasks (non-trivial title with no acceptance criteria)
  */
 export function estimateTaskComplexity(task: PrdTask): number {
   let score = 1;
@@ -61,6 +67,10 @@ export function estimateTaskComplexity(task: PrdTask): number {
   else if (acCount >= 4) score += 2;
   else if (acCount >= 2) score += 1;
 
+  // Underspecified: non-trivial title with zero acceptance criteria is a red flag
+  // (complex work with no clear boundaries = likely to blow up in a single TDD cycle)
+  if (acCount === 0 && words > 5) score += 2;
+
   // Compound conjunctions in title
   const compounds = task.title.match(COMPOUND_WORDS) ?? [];
   score += Math.min(compounds.length, 3);
@@ -68,6 +78,10 @@ export function estimateTaskComplexity(task: PrdTask): number {
   // Scope-expanding keywords in title
   const scopeMatches = task.title.match(SCOPE_KEYWORDS) ?? [];
   score += Math.min(scopeMatches.length * 2, 4);
+
+  // Technical complexity keywords — features that typically need multiple TDD cycles
+  const techMatches = task.title.match(TECH_COMPLEXITY_KEYWORDS) ?? [];
+  score += Math.min(techMatches.length * 2, 4);
 
   // Clamp 1–10
   return Math.max(1, Math.min(10, score));

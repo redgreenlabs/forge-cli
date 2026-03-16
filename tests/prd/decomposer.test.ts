@@ -85,6 +85,32 @@ describe("estimateTaskComplexity", () => {
     expect(score).toBeGreaterThanOrEqual(1);
     expect(score).toBeLessThanOrEqual(10);
   });
+
+  it("should score higher with technical complexity keywords", () => {
+    const simple = makeTask("t1", "Add a button to the page");
+    const technical = makeTask("t2", "Render a sunburst chart with real-time animation");
+    expect(estimateTaskComplexity(technical)).toBeGreaterThan(
+      estimateTaskComplexity(simple)
+    );
+  });
+
+  it("should penalize underspecified tasks (no acceptance criteria + non-trivial title)", () => {
+    const specified = makeTask("t1", "Build the disk usage visualization tool", {
+      acceptanceCriteria: ["Shows disk usage"],
+    });
+    const underspecified = makeTask("t2", "Build the disk usage visualization tool");
+    expect(estimateTaskComplexity(underspecified)).toBeGreaterThan(
+      estimateTaskComplexity(specified)
+    );
+  });
+
+  it("should score the sunburst chart task above threshold 5", () => {
+    const task = makeTask(
+      "t1",
+      "Provide a fast, visually rich disk-usage map using a sunburst chart."
+    );
+    expect(estimateTaskComplexity(task)).toBeGreaterThanOrEqual(5);
+  });
 });
 
 describe("replaceTaskWithSubtasks", () => {
