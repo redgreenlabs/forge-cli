@@ -142,6 +142,8 @@ export const ForgeConfigSchema = z.object({
   rateLimitWaitMinutes: z.number().int().positive(),
   /** Number of consecutive exit signals required before accepting task completion */
   exitSignalThreshold: z.number().int().min(1),
+  /** Maximum consecutive failures per task before skipping it */
+  maxTaskFailures: z.number().int().min(1),
   /** TDD enforcement settings */
   tdd: TddConfigSchema,
   /** Code coverage settings */
@@ -175,6 +177,7 @@ export const defaultConfig: ForgeConfig = {
   sessionExpiryHours: 24,
   rateLimitWaitMinutes: 60,
   exitSignalThreshold: 2,
+  maxTaskFailures: 3,
   tdd: {
     enabled: true,
     requireFailingTestFirst: true,

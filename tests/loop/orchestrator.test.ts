@@ -419,6 +419,154 @@ describe("LoopOrchestrator", () => {
     });
   });
 
+  describe("task skip after repeated failures", () => {
+    it("should skip a task after maxTaskFailures consecutive failures", async () => {
+      let callCount = 0;
+      const failingExecutor: ClaudeExecutor = {
+        execute: vi.fn().mockImplementation(async () => {
+          callCount++;
+          return makeClaudeResponse({
+            status: "error",
+            error: "Process timed out (exit code 143) — consider increasing timeoutMinutes",
+            exitSignal: false,
+            filesModified: [],
+            testsPass: false,
+            testResults: { total: 0, passed: 0, failed: 0 },
+          });
+        }),
+      };
+
+      const orch = new LoopOrchestrator({
+        config: { ...defaultConfig, maxIterations: 10, exitSignalThreshold: 1, maxTaskFailures: 3 },
+        executor: failingExecutor,
+        tasks: [
+          {
+            id: "hard-task",
+            title: "Build sunburst chart",
+            status: TaskStatus.Pending,
+            priority: TaskPriority.High,
+            category: "",
+            acceptanceCriteria: [],
+            dependsOn: [],
+          },
+          {
+            id: "easy-task",
+            title: "Add README",
+            status: TaskStatus.Pending,
+            priority: TaskPriority.Medium,
+            category: "",
+            acceptanceCriteria: [],
+            dependsOn: [],
+          },
+        ],
+        onDashboardUpdate,
+      });
+
+      // Run 3 iterations — task should fail 3 times then be skipped
+      await orch.runIteration();
+      await orch.runIteration();
+      await orch.runIteration();
+
+      // After 3 failures, the "hard-task" should be skipped
+      const logAfterSkip = orch.agentLog;
+      const skipEntry = logAfterSkip.find((e) => e.action === "task-skipped");
+      expect(skipEntry).toBeDefined();
+      expect(skipEntry!.detail).toContain("sunburst chart");
+
+      // 4th iteration should pick up the "easy-task" instead
+      await orch.runIteration();
+      const logAfter4th = orch.agentLog;
+      const selectedEntries = logAfter4th.filter((e) => e.action === "selected");
+      const lastSelected = selectedEntries[selectedEntries.length - 1];
+      expect(lastSelected?.detail).toContain("README");
+    });
+
+    it("should log failure count progress", async () => {
+      const failingExecutor: ClaudeExecutor = {
+        execute: vi.fn().mockResolvedValue(makeClaudeResponse({
+          status: "error",
+          error: "Some error",
+          exitSignal: false,
+          filesModified: [],
+          testsPass: false,
+          testResults: { total: 0, passed: 0, failed: 0 },
+        })),
+      };
+
+      const orch = new LoopOrchestrator({
+        config: { ...defaultConfig, maxIterations: 10, exitSignalThreshold: 1, maxTaskFailures: 3 },
+        executor: failingExecutor,
+        tasks: [
+          {
+            id: "t1",
+            title: "Task one",
+            status: TaskStatus.Pending,
+            priority: TaskPriority.High,
+            category: "",
+            acceptanceCriteria: [],
+            dependsOn: [],
+          },
+        ],
+        onDashboardUpdate,
+      });
+
+      await orch.runIteration();
+      const retryEntry = orch.agentLog.find((e) => e.action === "task-retry");
+      expect(retryEntry).toBeDefined();
+      expect(retryEntry!.detail).toContain("1/3");
+    });
+
+    it("should reset failure count on task success", async () => {
+      let callCount = 0;
+      const mixedExecutor: ClaudeExecutor = {
+        execute: vi.fn().mockImplementation(async () => {
+          callCount++;
+          // First 2 calls fail (red phase + green phase of iteration 1 red fails)
+          // Actually pipeline treats red phase failure as pipeline failure
+          if (callCount <= 2) {
+            return makeClaudeResponse({
+              status: "error",
+              error: "timeout",
+              exitSignal: false,
+              filesModified: [],
+              testsPass: false,
+              testResults: { total: 0, passed: 0, failed: 0 },
+            });
+          }
+          // Then succeed
+          return makeClaudeResponse();
+        }),
+      };
+
+      const orch = new LoopOrchestrator({
+        config: { ...defaultConfig, maxIterations: 10, exitSignalThreshold: 1, maxTaskFailures: 5 },
+        executor: mixedExecutor,
+        tasks: [
+          {
+            id: "t1",
+            title: "Task one",
+            status: TaskStatus.Pending,
+            priority: TaskPriority.High,
+            category: "",
+            acceptanceCriteria: [],
+            dependsOn: [],
+          },
+        ],
+        onDashboardUpdate,
+      });
+
+      // First iteration fails
+      await orch.runIteration();
+      // Should have a retry log
+      expect(orch.agentLog.some((e) => e.action === "task-retry")).toBe(true);
+
+      // Next iteration succeeds (or at least the pipeline completes)
+      await orch.runIteration();
+      // Task should not be skipped
+      expect(orch.agentLog.every((e) => e.action !== "task-skipped")).toBe(true);
+    });
+  });
+
   describe("workspace-aware quality gates", () => {
     it("should run gates per affected workspace", async () => {
       const orch = new LoopOrchestrator({

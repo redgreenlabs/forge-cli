@@ -346,6 +346,54 @@ describe("LoopRunner", () => {
       expect(t2.status).toBe("pending");
     });
 
+    it("should not write duplicate log entries", async () => {
+      const runner = new LoopRunner({
+        config: { ...safeConfig, maxIterations: 3 },
+        executor: mockExecutor(),
+        tasks: [sampleTasks[0]!],
+        forgeDir: tmpDir,
+        sessionId: "nodup-log-test",
+      });
+
+      await runner.run();
+
+      const logFile = join(tmpDir, "logs", "nodup-lo.jsonl");
+      const content = readFileSync(logFile, "utf-8");
+      const lines = content.trim().split("\n").filter(Boolean);
+      const entries = lines.map((l) => JSON.parse(l));
+
+      // Count "start" entries — should appear exactly once
+      const startEntries = entries.filter(
+        (e: { action: string }) => e.action === "start"
+      );
+      expect(startEntries).toHaveLength(1);
+
+      // Count "end" entries — should appear exactly once
+      const endEntries = entries.filter(
+        (e: { action: string }) => e.action === "end"
+      );
+      expect(endEntries).toHaveLength(1);
+
+      // No two consecutive entries should be identical (timestamp may differ,
+      // but action+agent+detail combos should not repeat from flush duplication)
+      const signatures = entries.map(
+        (e: { agent: string; action: string; detail: string }) =>
+          `${e.agent}:${e.action}:${e.detail}`
+      );
+      // Agent log entries from the orchestrator should not be duplicated
+      // Count each orchestrator entry — it should appear at most once
+      const agentEntries = entries.filter(
+        (e: { action: string }) => e.action !== "start" && e.action !== "end"
+      );
+      const agentSigs = agentEntries.map(
+        (e: { agent: string; action: string; detail: string }) =>
+          `${e.agent}:${e.action}:${e.detail}`
+      );
+      const uniqueAgentSigs = new Set(agentSigs);
+      // With the fix, each orchestrator log should appear once (not duplicated by flushLogs)
+      expect(agentSigs.length).toBe(uniqueAgentSigs.size);
+    });
+
     it("should update tasks.md checkboxes for completed tasks", async () => {
       // Write a tasks.md with checkboxes
       writeFileSync(

@@ -107,6 +107,8 @@ export function parseClaudeResponse(raw: RawClaudeOutput): ClaudeResponse {
       error: timeoutMsg ?? errorText,
       contextExhausted: isContextLimit,
       rateLimited: isRateLimited,
+      rawStderr: raw.stderr || undefined,
+      rawStdout: raw.stdout ? raw.stdout.slice(0, 2000) : undefined,
     };
   }
 

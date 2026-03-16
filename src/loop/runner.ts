@@ -53,6 +53,7 @@ export class LoopRunner {
   private resume: boolean;
   private logFilePath: string | null = null;
   private forgeDir: string | null;
+  private _lastFlushedIndex = 0;
 
   constructor(options: LoopRunnerOptions) {
     this.forgeDir = options.forgeDir ?? null;
@@ -259,15 +260,18 @@ export class LoopRunner {
     }
   }
 
-  /** Flush all orchestrator agent logs to disk */
+  /** Flush new orchestrator agent logs to disk (incremental, avoids duplicates) */
   private flushLogs(): void {
     if (!this.logFilePath) return;
     try {
       const logs = this.orchestrator.agentLog;
-      const lines = logs.map((entry) => JSON.stringify(entry)).join("\n");
+      if (logs.length <= this._lastFlushedIndex) return;
+      const newLogs = logs.slice(this._lastFlushedIndex);
+      const lines = newLogs.map((entry) => JSON.stringify(entry)).join("\n");
       if (lines) {
         appendFileSync(this.logFilePath, lines + "\n");
       }
+      this._lastFlushedIndex = logs.length;
     } catch {
       // Non-fatal
     }

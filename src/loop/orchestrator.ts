@@ -61,6 +61,10 @@ export interface ClaudeResponse {
   contextExhausted?: boolean;
   /** Whether the error was caused by API rate limiting */
   rateLimited?: boolean;
+  /** Raw stderr output from Claude CLI (preserved for timeout diagnostics) */
+  rawStderr?: string;
+  /** Raw stdout output from Claude CLI (preserved for timeout diagnostics) */
+  rawStdout?: string;
 }
 
 /** Options for creating a LoopOrchestrator */
@@ -137,6 +141,7 @@ export class LoopOrchestrator {
   private _securityMetrics?: SecurityMetrics;
   private _rateLimitWaiting?: { until: number; reason: string };
   private _exitSignalCount = new Map<string, number>();
+  private _taskFailureCounts = new Map<string, number>();
 
   constructor(options: OrchestratorOptions) {
     this._config = options.config;
@@ -374,6 +379,31 @@ export class LoopOrchestrator {
         this.emitDashboardUpdate();
       }
 
+      // Track per-task failures and skip after maxTaskFailures consecutive failures
+      if (!pipelineResult.completed && currentTask) {
+        const failCount = (this._taskFailureCounts.get(currentTask.id) ?? 0) + 1;
+        this._taskFailureCounts.set(currentTask.id, failCount);
+
+        if (failCount >= this._config.maxTaskFailures) {
+          this.taskGraph.markSkipped(currentTask.id);
+          this.logAgent("system", "task-skipped",
+            `Skipping task after ${failCount} consecutive failures: ${currentTask.title}`);
+          this._taskFailureCounts.delete(currentTask.id);
+
+          // Log timeout diagnostics if available
+          if (pipelineResult.error?.includes("timed out")) {
+            this.logAgent("system", "timeout-diagnostics",
+              `Task "${currentTask.title}" timed out ${failCount} times. Check log file for stderr/stdout details.`);
+          }
+        } else {
+          this.logAgent("system", "task-retry",
+            `Failure ${failCount}/${this._config.maxTaskFailures} for: ${currentTask.title}`);
+        }
+      } else if (pipelineResult.completed && currentTask) {
+        // Reset failure count on success
+        this._taskFailureCounts.delete(currentTask.id);
+      }
+
       this.logAgent(
         agentRole,
         pipelineResult.completed ? "completed" : "failed",
@@ -464,6 +494,12 @@ export class LoopOrchestrator {
           if (response.testResults.failed > 0) {
             this._testFailures = response.testResults.failed;
           }
+        }
+
+        // Log timeout diagnostics for visibility
+        if (response.error?.includes("timed out") && response.rawStderr) {
+          this.logAgent("system", "timeout-stderr",
+            response.rawStderr.slice(-500));
         }
 
         allFilesModified.push(...response.filesModified);

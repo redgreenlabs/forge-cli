@@ -41,7 +41,7 @@ export class TaskGraph {
   }
 
   get remainingTasks(): number {
-    return this.totalTasks - this.completedTasks;
+    return this.totalTasks - this.completedTasks - this.skippedTasks;
   }
 
   get completionPercentage(): number {
@@ -138,12 +138,12 @@ export class TaskGraph {
     const available: TaskNode[] = [];
 
     for (const [, node] of this.nodes) {
-      if (node.status === TaskStatus.Done) continue;
+      if (node.status === TaskStatus.Done || node.status === TaskStatus.Skipped) continue;
 
       const knownDeps = node.dependsOn.filter((d) => this.taskIds.has(d));
       const allDepsComplete = knownDeps.every((depId) => {
         const dep = this.nodes.get(depId);
-        return dep?.status === TaskStatus.Done;
+        return dep?.status === TaskStatus.Done || dep?.status === TaskStatus.Skipped;
       });
 
       if (allDepsComplete) {
@@ -160,5 +160,19 @@ export class TaskGraph {
     if (node) {
       node.status = TaskStatus.Done;
     }
+  }
+
+  /** Mark a task as skipped (e.g. after repeated failures) */
+  markSkipped(taskId: string): void {
+    const node = this.nodes.get(taskId);
+    if (node) {
+      node.status = TaskStatus.Skipped;
+    }
+  }
+
+  get skippedTasks(): number {
+    return Array.from(this.nodes.values()).filter(
+      (t) => t.status === TaskStatus.Skipped
+    ).length;
   }
 }

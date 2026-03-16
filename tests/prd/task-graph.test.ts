@@ -161,6 +161,63 @@ describe("TaskGraph", () => {
     });
   });
 
+  describe("skipped tasks", () => {
+    it("should mark task as skipped", () => {
+      const graph = new TaskGraph([makeTask("a"), makeTask("b")]);
+      graph.markSkipped("a");
+      const next = graph.nextAvailable();
+      expect(next.map((t) => t.id)).toEqual(["b"]);
+    });
+
+    it("should not return skipped tasks in nextAvailable", () => {
+      const graph = new TaskGraph([
+        makeTask("a"),
+        makeTask("b"),
+        makeTask("c"),
+      ]);
+      graph.markSkipped("a");
+      graph.markSkipped("c");
+      const next = graph.nextAvailable();
+      expect(next.map((t) => t.id)).toEqual(["b"]);
+    });
+
+    it("should treat skipped dependency as satisfied", () => {
+      const graph = new TaskGraph([
+        makeTask("a"),
+        makeTask("b", ["a"]),
+      ]);
+      graph.markSkipped("a");
+      const next = graph.nextAvailable();
+      expect(next.map((t) => t.id)).toEqual(["b"]);
+    });
+
+    it("should track skipped count", () => {
+      const graph = new TaskGraph([
+        makeTask("a"),
+        makeTask("b"),
+        makeTask("c"),
+      ]);
+      expect(graph.skippedTasks).toBe(0);
+      graph.markSkipped("a");
+      expect(graph.skippedTasks).toBe(1);
+      graph.markSkipped("b");
+      expect(graph.skippedTasks).toBe(2);
+    });
+
+    it("should subtract skipped from remaining", () => {
+      const graph = new TaskGraph([
+        makeTask("a"),
+        makeTask("b"),
+        makeTask("c"),
+      ]);
+      expect(graph.remainingTasks).toBe(3);
+      graph.markComplete("a");
+      expect(graph.remainingTasks).toBe(2);
+      graph.markSkipped("b");
+      expect(graph.remainingTasks).toBe(1);
+    });
+  });
+
   describe("ignore unknown dependencies", () => {
     it("should ignore dependencies that reference non-existent tasks", () => {
       const graph = new TaskGraph([

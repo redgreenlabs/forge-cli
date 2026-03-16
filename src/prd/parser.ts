@@ -6,6 +6,7 @@ export enum TaskStatus {
   InProgress = "in_progress",
   Done = "done",
   Blocked = "blocked",
+  Skipped = "skipped",
 }
 
 /** Task priority levels */

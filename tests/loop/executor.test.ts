@@ -326,6 +326,42 @@ EXIT_SIGNAL: false
       expect(result.error).toContain("rate limit");
     });
 
+    it("should include rawStderr and rawStdout on timeout errors", () => {
+      const raw: RawClaudeOutput = {
+        stdout: '{"partial": "output from claude"}',
+        stderr: "Using tool Read(src/app.ts)\nUsing tool Write(src/app.ts)",
+        exitCode: 143,
+      };
+
+      const result = parseClaudeResponse(raw);
+      expect(result.status).toBe("error");
+      expect(result.rawStderr).toBe("Using tool Read(src/app.ts)\nUsing tool Write(src/app.ts)");
+      expect(result.rawStdout).toBe('{"partial": "output from claude"}');
+    });
+
+    it("should truncate rawStdout to 2000 chars on error", () => {
+      const raw: RawClaudeOutput = {
+        stdout: "x".repeat(3000),
+        stderr: "",
+        exitCode: 143,
+      };
+
+      const result = parseClaudeResponse(raw);
+      expect(result.rawStdout).toHaveLength(2000);
+    });
+
+    it("should not include rawStderr/rawStdout on success", () => {
+      const raw: RawClaudeOutput = {
+        stdout: JSON.stringify({ result: "done" }),
+        stderr: "",
+        exitCode: 0,
+      };
+
+      const result = parseClaudeResponse(raw);
+      expect(result.rawStderr).toBeUndefined();
+      expect(result.rawStdout).toBeUndefined();
+    });
+
     it("should not flag normal errors as rate limited", () => {
       const raw: RawClaudeOutput = {
         stdout: "",
