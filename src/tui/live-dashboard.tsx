@@ -98,9 +98,9 @@ function StatusBox({ state, startedAt }: {
     : loop.circuitBreakerState === CircuitBreakerState.HalfOpen ? "yellow" : "green";
 
   return (
-    <Box borderStyle="single" borderColor="gray" flexDirection="column" paddingX={1}>
-      {/* Row 1: Phase + Tasks + Stats */}
-      <Box gap={2}>
+    <Box borderStyle="single" borderColor="gray" flexDirection="column" paddingX={1} paddingY={0}>
+      {/* Row 1: Phase + Tasks + Iteration */}
+      <Box gap={3}>
         <Text>
           <Text bold>Phase:</Text>{" "}
           <Text color={phaseColor}>{loop.phase.toUpperCase()}</Text>
@@ -113,6 +113,13 @@ function StatusBox({ state, startedAt }: {
         <Text>
           <Text bold>Iter:</Text> {loop.iteration}
         </Text>
+        {loop.circuitBreakerState !== CircuitBreakerState.Closed && (
+          <Text color={cbColor} bold>Circuit: {loop.circuitBreakerState.toUpperCase()}</Text>
+        )}
+      </Box>
+
+      {/* Row 2: Elapsed + Cost + Commits + Files */}
+      <Box gap={3}>
         <Text>
           <Text bold>Elapsed:</Text>{" "}
           <Text color="gray">{formatElapsed(elapsed)}</Text>
@@ -132,12 +139,10 @@ function StatusBox({ state, startedAt }: {
             <Text bold>Files:</Text> {loop.filesModifiedThisIteration}
           </Text>
         )}
-        {loop.circuitBreakerState !== CircuitBreakerState.Closed && (
-          <Text color={cbColor} bold>Circuit: {loop.circuitBreakerState.toUpperCase()}</Text>
-        )}
       </Box>
 
-      {/* Row 2: Progress bar */}
+      {/* Row 3: Progress bar */}
+      <Text> </Text>
       <Box gap={2}>
         <Text>
           [<Text color="green">{"█".repeat(filled)}</Text>
@@ -146,7 +151,7 @@ function StatusBox({ state, startedAt }: {
         </Text>
       </Box>
 
-      {/* Row 3: Task name */}
+      {/* Row 4: Task name */}
       <Box>
         <Text bold>Task: </Text>
         <Text color="white">{state.currentTask
@@ -154,7 +159,8 @@ function StatusBox({ state, startedAt }: {
           : "waiting..."}</Text>
       </Box>
 
-      {/* Row 4: TDD pipeline */}
+      {/* Row 5: TDD pipeline */}
+      <Text> </Text>
       <Box gap={1}>
         <TddPipeline tddPhase={tddPhase} tddCycles={tddCycles} qualityReport={state.qualityReport} />
         {state.rateLimitWaiting && (
@@ -162,7 +168,7 @@ function StatusBox({ state, startedAt }: {
         )}
       </Box>
 
-      {/* Row 5: Quality gates (when available) */}
+      {/* Row 6: Quality gates (when available) */}
       {state.qualityReport && (
         <Box gap={1}>
           <Text bold>Gates:</Text>
