@@ -157,6 +157,27 @@ function StatusBox({ state, startedAt }: {
           <Text color="yellow">⏳ Rate limited — {Math.ceil(Math.max(0, state.rateLimitWaiting.until - Date.now()) / 1000)}s</Text>
         )}
       </Box>
+
+      {/* Row 5: Quality gates (when available) */}
+      {state.qualityReport && (
+        <Box gap={1}>
+          <Text bold>Gates:</Text>
+          {state.qualityReport.results.map((gate) => {
+            const icon = gate.status === GateStatus.Passed ? "✓"
+              : gate.status === GateStatus.Failed ? "✗"
+              : gate.status === GateStatus.Warning ? "⚠" : "○";
+            const color = gate.status === GateStatus.Passed ? "green"
+              : gate.status === GateStatus.Failed ? "red"
+              : gate.status === GateStatus.Warning ? "yellow" : "gray";
+            return (
+              <Text key={gate.name}>
+                <Text color={color}>{icon} {gate.name}</Text>
+              </Text>
+            );
+          })}
+          <Text color="gray">({state.qualityReport.totalDurationMs}ms)</Text>
+        </Box>
+      )}
     </Box>
   );
 }
