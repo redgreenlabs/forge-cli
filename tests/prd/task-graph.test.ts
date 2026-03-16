@@ -218,6 +218,72 @@ describe("TaskGraph", () => {
     });
   });
 
+  describe("nextAvailable sorting", () => {
+    it("should return higher priority tasks first", () => {
+      const graph = new TaskGraph([
+        { ...makeTask("low-task"), priority: TaskPriority.Low },
+        { ...makeTask("critical-task"), priority: TaskPriority.Critical },
+        { ...makeTask("medium-task"), priority: TaskPriority.Medium },
+        { ...makeTask("high-task"), priority: TaskPriority.High },
+      ]);
+      const next = graph.nextAvailable();
+      expect(next.map((t) => t.id)).toEqual([
+        "critical-task",
+        "high-task",
+        "medium-task",
+        "low-task",
+      ]);
+    });
+
+    it("should prefer foundational tasks (more dependents) within same priority", () => {
+      // "foundation" has 2 tasks depending on it, "leaf" has none
+      const graph = new TaskGraph([
+        makeTask("foundation"),
+        makeTask("leaf"),
+        makeTask("child-1", ["foundation"]),
+        makeTask("child-2", ["foundation"]),
+      ]);
+      const next = graph.nextAvailable();
+      // foundation should come before leaf since it unblocks 2 tasks
+      expect(next[0]!.id).toBe("foundation");
+      expect(next[1]!.id).toBe("leaf");
+    });
+
+    it("should combine priority and dependents: priority wins", () => {
+      const graph = new TaskGraph([
+        // low priority but many dependents
+        { ...makeTask("low-foundation"), priority: TaskPriority.Low },
+        // high priority, no dependents
+        { ...makeTask("high-leaf"), priority: TaskPriority.High },
+        makeTask("child-1", ["low-foundation"]),
+        makeTask("child-2", ["low-foundation"]),
+      ]);
+      const next = graph.nextAvailable();
+      expect(next[0]!.id).toBe("high-leaf");
+      expect(next[1]!.id).toBe("low-foundation");
+    });
+
+    it("should sort correctly after completing some tasks", () => {
+      const graph = new TaskGraph([
+        { ...makeTask("setup"), priority: TaskPriority.Critical },
+        { ...makeTask("deploy"), priority: TaskPriority.Low },
+        makeTask("feature-a", ["setup"]),
+        makeTask("feature-b", ["setup"]),
+      ]);
+      // Initially only setup and deploy are available
+      expect(graph.nextAvailable()[0]!.id).toBe("setup");
+
+      graph.markComplete("setup");
+      // Now feature-a, feature-b (medium) and deploy (low) are available
+      const next = graph.nextAvailable();
+      expect(next.map((t) => t.priority)).toEqual([
+        TaskPriority.Medium,
+        TaskPriority.Medium,
+        TaskPriority.Low,
+      ]);
+    });
+  });
+
   describe("ignore unknown dependencies", () => {
     it("should ignore dependencies that reference non-existent tasks", () => {
       const graph = new TaskGraph([

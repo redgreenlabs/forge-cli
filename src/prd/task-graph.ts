@@ -1,4 +1,4 @@
-import { TaskStatus, type PrdTask } from "./parser.js";
+import { TaskStatus, TaskPriority, type PrdTask } from "./parser.js";
 
 /** A node in the task dependency graph */
 export type TaskNode = PrdTask;
@@ -132,6 +132,8 @@ export class TaskGraph {
   /**
    * Return tasks that are ready to execute (pending, with all dependencies complete).
    *
+   * Sorted by: priority (critical first), then by number of dependents
+   * (foundational tasks that unblock others run first).
    * Ignores dependencies that reference non-existent tasks.
    */
   nextAvailable(): TaskNode[] {
@@ -151,7 +153,41 @@ export class TaskGraph {
       }
     }
 
+    // Sort: higher priority first, then foundational tasks (more dependents) first
+    const priorityRank: Record<string, number> = {
+      [TaskPriority.Critical]: 0,
+      [TaskPriority.High]: 1,
+      [TaskPriority.Medium]: 2,
+      [TaskPriority.Low]: 3,
+    };
+    const dependentCount = this.computeDependentCounts();
+
+    available.sort((a, b) => {
+      const pa = priorityRank[a.priority] ?? 2;
+      const pb = priorityRank[b.priority] ?? 2;
+      if (pa !== pb) return pa - pb;
+      // More dependents = more foundational = should run first
+      return (dependentCount.get(b.id) ?? 0) - (dependentCount.get(a.id) ?? 0);
+    });
+
     return available;
+  }
+
+  /** Count how many tasks (transitively) depend on each task */
+  private computeDependentCounts(): Map<string, number> {
+    const counts = new Map<string, number>();
+    for (const [id] of this.nodes) {
+      counts.set(id, 0);
+    }
+    for (const [, node] of this.nodes) {
+      if (node.status === TaskStatus.Done || node.status === TaskStatus.Skipped) continue;
+      for (const dep of node.dependsOn) {
+        if (this.taskIds.has(dep)) {
+          counts.set(dep, (counts.get(dep) ?? 0) + 1);
+        }
+      }
+    }
+    return counts;
   }
 
   /** Mark a task as complete and update the graph */
