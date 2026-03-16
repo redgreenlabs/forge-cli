@@ -16,6 +16,8 @@ export interface ClaudeExecOptions {
   onStderr?: (line: string) => void;
   /** Callback for real-time stream-json events from Claude CLI stdout */
   onStreamEvent?: (event: StreamEvent) => void;
+  /** Abort signal to cancel the running Claude process */
+  signal?: AbortSignal;
 }
 
 /** A parsed stream-json event from Claude CLI */
@@ -603,6 +605,17 @@ export class ClaudeCodeExecutor {
         env,
         cwd: this.projectRoot,
       });
+
+      // Kill child process on abort signal
+      if (options.signal) {
+        if (options.signal.aborted) {
+          proc.kill("SIGTERM");
+        } else {
+          const onAbort = () => proc.kill("SIGTERM");
+          options.signal.addEventListener("abort", onAbort, { once: true });
+          proc.on("close", () => options.signal?.removeEventListener("abort", onAbort));
+        }
+      }
 
       let stdout = "";
       let stderr = "";

@@ -46,6 +46,7 @@ export interface ClaudeExecutor {
     sessionId?: string;
     onStderr?: (line: string) => void;
     onStreamEvent?: (event: StreamEvent) => void;
+    signal?: AbortSignal;
   }) => Promise<ClaudeResponse>;
 }
 
@@ -150,6 +151,7 @@ export class LoopOrchestrator {
   private _rateLimitWaiting?: { until: number; reason: string };
   private _taskFailureCounts = new Map<string, number>();
   private _claudeLogs: string[] = [];
+  private _signal?: AbortSignal;
   private static readonly MAX_CLAUDE_LOGS = 200;
   private _costTotal = 0;
   private _costCurrentTask = 0;
@@ -677,6 +679,7 @@ export class LoopOrchestrator {
 
   /** Run the full loop until a stop condition is met */
   async runLoop(signal?: AbortSignal): Promise<void> {
+    this._signal = signal;
     while (!this.shouldStop()) {
       if (signal?.aborted) {
         break;
@@ -748,6 +751,7 @@ export class LoopOrchestrator {
     const response = await this._executor.execute({
       ...options,
       sessionId: getSessionId(),
+      signal: this._signal,
     });
 
     // Rotate session on context exhaustion or timeout (large context likely caused the timeout)
@@ -759,6 +763,7 @@ export class LoopOrchestrator {
       return this._executor.execute({
         ...options,
         sessionId: undefined,
+        signal: this._signal,
       });
     }
 
@@ -778,6 +783,7 @@ export class LoopOrchestrator {
       return this._executor.execute({
         ...options,
         sessionId: undefined,
+        signal: this._signal,
       });
     }
 
