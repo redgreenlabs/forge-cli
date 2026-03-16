@@ -99,11 +99,16 @@ function StatusBox({ state, startedAt }: {
 
   return (
     <Box borderStyle="single" borderColor="gray" flexDirection="column" paddingX={1}>
-      {/* Row 1: Phase + Progress + Stats */}
+      {/* Row 1: Phase + Tasks + Stats */}
       <Box gap={2}>
         <Text>
           <Text bold>Phase:</Text>{" "}
           <Text color={phaseColor}>{loop.phase.toUpperCase()}</Text>
+        </Text>
+        <Text>
+          <Text bold>Tasks:</Text>{" "}
+          <Text color={loop.tasksCompleted > 0 ? "green" : "white"}>{loop.tasksCompleted}</Text>
+          <Text color="gray">/{loop.totalTasks}</Text>
         </Text>
         <Text>
           <Text bold>Iter:</Text> {loop.iteration}
@@ -118,19 +123,6 @@ function StatusBox({ state, startedAt }: {
             <Text color="yellow">{formatCost(cost.totalUsd)}</Text>
           </Text>
         )}
-        {loop.circuitBreakerState !== CircuitBreakerState.Closed && (
-          <Text color={cbColor} bold>Circuit: {loop.circuitBreakerState.toUpperCase()}</Text>
-        )}
-      </Box>
-
-      {/* Row 2: Progress bar + Task counters */}
-      <Box gap={2}>
-        <Text>
-          [<Text color="green">{"█".repeat(filled)}</Text>
-          <Text color="gray">{"░".repeat(empty)}</Text>]{" "}
-          <Text bold>{progress}%</Text>{" "}
-          <Text color="gray">({loop.tasksCompleted}/{loop.totalTasks} tasks)</Text>
-        </Text>
         <Text>
           <Text bold>Commits:</Text>{" "}
           <Text color={commitCount > 0 ? "green" : "gray"}>{commitCount}</Text>
@@ -140,6 +132,18 @@ function StatusBox({ state, startedAt }: {
             <Text bold>Files:</Text> {loop.filesModifiedThisIteration}
           </Text>
         )}
+        {loop.circuitBreakerState !== CircuitBreakerState.Closed && (
+          <Text color={cbColor} bold>Circuit: {loop.circuitBreakerState.toUpperCase()}</Text>
+        )}
+      </Box>
+
+      {/* Row 2: Progress bar */}
+      <Box gap={2}>
+        <Text>
+          [<Text color="green">{"█".repeat(filled)}</Text>
+          <Text color="gray">{"░".repeat(empty)}</Text>]{" "}
+          <Text bold>{progress}%</Text>
+        </Text>
       </Box>
 
       {/* Row 3: Task name */}
