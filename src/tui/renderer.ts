@@ -55,8 +55,8 @@ export interface CostMetrics {
   currentTaskUsd: number;
   /** Per-phase cost breakdown (phase name → USD) */
   perPhase: Record<string, number>;
-  /** Total API calls made */
-  apiCalls: number;
+  /** Total Claude CLI executions (one per TDD phase) */
+  executions: number;
   /** Number of completed tasks (for avg calculation) */
   completedTasks: number;
 }

@@ -67,11 +67,23 @@ function formatCost(usd: number): string {
   return `$${usd.toFixed(4)}`;
 }
 
-// ── Compact Header (3 lines) ───────────────────────────────────────
+// ── Title Bar ──────────────────────────────────────────────────────
 
-function CompactHeader({ state, tick, startedAt }: {
+function TitleBar({ tick, phase }: { tick: number; phase: LoopPhase }) {
+  const spinnerChar = phase !== LoopPhase.Idle ? SPINNER[tick % SPINNER.length] : " ";
+  return (
+    <Box borderStyle="round" borderColor="cyan" paddingX={2} justifyContent="center">
+      <Text bold color="white">FORGE</Text>
+      <Text color="gray">  Development Loop  </Text>
+      {phase !== LoopPhase.Idle && <Text color="green">{spinnerChar}</Text>}
+    </Box>
+  );
+}
+
+// ── Status Box ─────────────────────────────────────────────────────
+
+function StatusBox({ state, startedAt }: {
   state: DashboardState;
-  tick: number;
   startedAt: number;
 }) {
   const elapsed = Date.now() - startedAt;
@@ -80,44 +92,69 @@ function CompactHeader({ state, tick, startedAt }: {
   const progress = loop.totalTasks > 0
     ? Math.round((loop.tasksCompleted / loop.totalTasks) * 100)
     : 0;
-  const spinnerChar = loop.phase !== LoopPhase.Idle ? SPINNER[tick % SPINNER.length] : " ";
-  const filled = Math.round((progress / 100) * 12);
-  const empty = 12 - filled;
+  const filled = Math.round((progress / 100) * 14);
+  const empty = 14 - filled;
   const cbColor = loop.circuitBreakerState === CircuitBreakerState.Open ? "red"
     : loop.circuitBreakerState === CircuitBreakerState.HalfOpen ? "yellow" : "green";
 
   return (
-    <Box flexDirection="column">
-      {/* Line 1: Status + Progress + Elapsed + Cost */}
-      <Box>
-        <Text color="cyan" bold> FORGE </Text>
-        <Text color={phaseColor}>{spinnerChar} {loop.phase.toUpperCase().padEnd(12)}</Text>
-        <Text> [</Text>
-        <Text color="green">{"█".repeat(filled)}</Text>
-        <Text color="gray">{"░".repeat(empty)}</Text>
-        <Text>] </Text>
-        <Text>{loop.tasksCompleted}/{loop.totalTasks}</Text>
-        <Text color="gray"> {formatElapsed(elapsed)}</Text>
-        {loop.filesModifiedThisIteration > 0 && (
-          <Text color="gray"> {loop.filesModifiedThisIteration}files</Text>
+    <Box borderStyle="single" borderColor="gray" flexDirection="column" paddingX={1}>
+      {/* Row 1: Phase + Progress + Stats */}
+      <Box gap={2}>
+        <Text>
+          <Text bold>Phase:</Text>{" "}
+          <Text color={phaseColor}>{loop.phase.toUpperCase()}</Text>
+        </Text>
+        <Text>
+          <Text bold>Iter:</Text> {loop.iteration}
+        </Text>
+        <Text>
+          <Text bold>Elapsed:</Text>{" "}
+          <Text color="gray">{formatElapsed(elapsed)}</Text>
+        </Text>
+        {cost && (
+          <Text>
+            <Text bold>Cost:</Text>{" "}
+            <Text color="yellow">{formatCost(cost.totalUsd)}</Text>
+          </Text>
         )}
-        <Text color="gray"> ↻</Text><Text>{commitCount}</Text>
-        {cost && <Text color="yellow"> {formatCost(cost.totalUsd)}</Text>}
-        <Text color={cbColor}> {loop.circuitBreakerState === CircuitBreakerState.Closed ? "" : ` ⚡${loop.circuitBreakerState.toUpperCase()}`}</Text>
+        {loop.circuitBreakerState !== CircuitBreakerState.Closed && (
+          <Text color={cbColor} bold>Circuit: {loop.circuitBreakerState.toUpperCase()}</Text>
+        )}
       </Box>
-      {/* Line 2: Current task */}
+
+      {/* Row 2: Progress bar + Task counters */}
+      <Box gap={2}>
+        <Text>
+          [<Text color="green">{"█".repeat(filled)}</Text>
+          <Text color="gray">{"░".repeat(empty)}</Text>]{" "}
+          <Text bold>{progress}%</Text>{" "}
+          <Text color="gray">({loop.tasksCompleted}/{loop.totalTasks} tasks)</Text>
+        </Text>
+        <Text>
+          <Text bold>Commits:</Text>{" "}
+          <Text color={commitCount > 0 ? "green" : "gray"}>{commitCount}</Text>
+        </Text>
+        {loop.filesModifiedThisIteration > 0 && (
+          <Text>
+            <Text bold>Files:</Text> {loop.filesModifiedThisIteration}
+          </Text>
+        )}
+      </Box>
+
+      {/* Row 3: Task name */}
       <Box>
-        <Text color="gray"> Task: </Text>
+        <Text bold>Task: </Text>
         <Text color="white">{state.currentTask
-          ? (state.currentTask.length > 70 ? state.currentTask.slice(0, 67) + "..." : state.currentTask)
+          ? (state.currentTask.length > 65 ? state.currentTask.slice(0, 62) + "..." : state.currentTask)
           : "waiting..."}</Text>
       </Box>
-      {/* Line 3: TDD pipeline visualization */}
-      <Box>
-        <Text> </Text>
+
+      {/* Row 4: TDD pipeline */}
+      <Box gap={1}>
         <TddPipeline tddPhase={tddPhase} tddCycles={tddCycles} qualityReport={state.qualityReport} />
         {state.rateLimitWaiting && (
-          <Text color="yellow"> ⏳ Rate limited — {Math.ceil(Math.max(0, state.rateLimitWaiting.until - Date.now()) / 1000)}s</Text>
+          <Text color="yellow">⏳ Rate limited — {Math.ceil(Math.max(0, state.rateLimitWaiting.until - Date.now()) / 1000)}s</Text>
         )}
       </Box>
     </Box>
@@ -130,12 +167,10 @@ function TddPipeline({ tddPhase, tddCycles, qualityReport }: {
   tddCycles: number;
   qualityReport?: PipelineResult;
 }) {
-  const phases: Array<{ label: string; color: string; status: "done" | "active" | "pending" | "failed" }> = [];
-
-  // Determine phase status based on current TDD phase
   const phaseOrder = [TddPhase.Red, TddPhase.Green, TddPhase.Refactor];
   const currentIdx = phaseOrder.indexOf(tddPhase);
 
+  const phases: Array<{ label: string; color: string; status: "done" | "active" | "pending" | "failed" }> = [];
   for (let i = 0; i < phaseOrder.length; i++) {
     const p = phaseOrder[i]!;
     const display = TDD_DISPLAY[p];
@@ -146,7 +181,6 @@ function TddPipeline({ tddPhase, tddCycles, qualityReport }: {
     });
   }
 
-  // Gates status
   const gatesFailed = qualityReport && !qualityReport.passed;
   phases.push({
     label: "Gates",
@@ -170,7 +204,7 @@ function TddPipeline({ tddPhase, tddCycles, qualityReport }: {
   );
 }
 
-// ── Claude Output (full-width, fills remaining space) ──────────────
+// ── Claude Output Box ──────────────────────────────────────────────
 
 function LogLine({ line, maxWidth }: { line: string; maxWidth: number }) {
   const truncated = line.length > maxWidth ? line.slice(0, maxWidth - 1) + "…" : line;
@@ -182,17 +216,26 @@ function LogLine({ line, maxWidth }: { line: string; maxWidth: number }) {
   return <Text color="gray">{truncated}</Text>;
 }
 
-function ClaudeOutput({ logs, height, width }: { logs: string[]; height: number; width: number }) {
-  const visible = logs.slice(-height);
-  const maxW = Math.max(10, width - 2);
+function ClaudeOutputBox({ logs, height, width }: { logs: string[]; height: number; width: number }) {
+  // Account for border (2 lines) + header (1 line)
+  const contentHeight = Math.max(1, height - 3);
+  const visible = logs.slice(-contentHeight);
+  const maxW = Math.max(10, width - 6); // border + padding
 
   return (
-    <Box flexDirection="column" flexGrow={1}>
+    <Box
+      borderStyle="single"
+      borderColor="gray"
+      flexDirection="column"
+      flexGrow={1}
+      paddingX={1}
+    >
+      <Text bold color="gray">Claude Output</Text>
       {visible.length === 0 ? (
-        <Text color="gray" dimColor> Waiting for Claude...</Text>
+        <Text color="gray" dimColor>Waiting for Claude...</Text>
       ) : (
         visible.map((line, i) => (
-          <Box key={i}><Text> </Text><LogLine line={line} maxWidth={maxW} /></Box>
+          <LogLine key={i} line={line} maxWidth={maxW} />
         ))
       )}
     </Box>
@@ -203,9 +246,8 @@ function ClaudeOutput({ logs, height, width }: { logs: string[]; height: number;
 
 function DashboardOverlay({ state }: { state: DashboardState }) {
   return (
-    <Box flexDirection="column" flexGrow={1} paddingX={1}>
-      <Text bold color="cyan"> Dashboard</Text>
-      <Text color="gray">{" ─".repeat(30)}</Text>
+    <Box borderStyle="single" borderColor="cyan" flexDirection="column" flexGrow={1} paddingX={1}>
+      <Text bold color="cyan">Dashboard</Text>
 
       {/* Cost Breakdown */}
       <CostPanel cost={state.cost} />
@@ -223,49 +265,43 @@ function DashboardOverlay({ state }: { state: DashboardState }) {
       {state.codeMetrics && <CodeMetricsPanel metrics={state.codeMetrics} />}
 
       <Box marginTop={1}>
-        <Text color="gray"> Press </Text><Text bold>d</Text><Text color="gray"> to close</Text>
+        <Text color="gray">Press </Text><Text bold>d</Text><Text color="gray"> to close</Text>
       </Box>
     </Box>
   );
 }
 
 function CostPanel({ cost }: { cost?: CostMetrics }) {
-  if (!cost) return (
-    <Box flexDirection="column" marginBottom={1}>
-      <Text bold> Cost</Text>
-      <Text color="gray">  No API calls yet</Text>
-    </Box>
-  );
-
-  const avgPerCall = cost.apiCalls > 0 ? cost.totalUsd / cost.apiCalls : 0;
-  const avgPerTask = cost.completedTasks > 0 ? cost.totalUsd / cost.completedTasks : 0;
-
   return (
-    <Box flexDirection="column" marginBottom={1}>
-      <Text bold> Cost</Text>
-      <Box>
-        <Text>  Total: </Text><Text color="yellow" bold>{formatCost(cost.totalUsd)}</Text>
-        <Text color="gray">  |  This task: </Text><Text color="yellow">{formatCost(cost.currentTaskUsd)}</Text>
-        <Text color="gray">  |  API calls: </Text><Text>{cost.apiCalls}</Text>
-      </Box>
-      <Box>
-        <Text color="gray">  Avg/call: </Text><Text>{formatCost(avgPerCall)}</Text>
-        {cost.completedTasks > 0 && (
-          <>
-            <Text color="gray">  |  Avg/task: </Text><Text>{formatCost(avgPerTask)}</Text>
-          </>
-        )}
-      </Box>
-      {Object.keys(cost.perPhase).length > 0 && (
-        <Box>
-          <Text color="gray">  By phase: </Text>
-          {Object.entries(cost.perPhase).map(([phase, usd], i) => (
-            <Text key={phase}>
-              {i > 0 && <Text color="gray"> | </Text>}
-              <Text color="gray">{phase}: </Text><Text>{formatCost(usd)}</Text>
-            </Text>
-          ))}
-        </Box>
+    <Box borderStyle="single" borderColor="yellow" flexDirection="column" paddingX={1} marginBottom={1}>
+      <Text bold color="yellow">Cost</Text>
+      {!cost ? (
+        <Text color="gray">No executions yet</Text>
+      ) : (
+        <>
+          <Box gap={3}>
+            <Text><Text bold>Total:</Text> <Text color="yellow" bold>{formatCost(cost.totalUsd)}</Text></Text>
+            <Text><Text bold>This task:</Text> <Text color="yellow">{formatCost(cost.currentTaskUsd)}</Text></Text>
+            <Text><Text bold>Executions:</Text> {cost.executions}</Text>
+          </Box>
+          <Box gap={3}>
+            <Text color="gray">Avg/execution: {formatCost(cost.executions > 0 ? cost.totalUsd / cost.executions : 0)}</Text>
+            {cost.completedTasks > 0 && (
+              <Text color="gray">Avg/task: {formatCost(cost.totalUsd / cost.completedTasks)}</Text>
+            )}
+          </Box>
+          {Object.keys(cost.perPhase).length > 0 && (
+            <Box>
+              <Text color="gray">By phase: </Text>
+              {Object.entries(cost.perPhase).map(([phase, usd], i) => (
+                <Text key={phase}>
+                  {i > 0 && <Text color="gray"> | </Text>}
+                  <Text color="gray">{phase}: </Text><Text>{formatCost(usd)}</Text>
+                </Text>
+              ))}
+            </Box>
+          )}
+        </>
       )}
     </Box>
   );
@@ -273,8 +309,8 @@ function CostPanel({ cost }: { cost?: CostMetrics }) {
 
 function GatesDetail({ report }: { report: PipelineResult }) {
   return (
-    <Box flexDirection="column" marginBottom={1}>
-      <Text bold> Quality Gates</Text>
+    <Box borderStyle="single" borderColor="gray" flexDirection="column" paddingX={1} marginBottom={1}>
+      <Text bold>Quality Gates</Text>
       {report.results.map((gate) => {
         const icon = gate.status === GateStatus.Passed ? "✓"
           : gate.status === GateStatus.Failed ? "✗"
@@ -284,7 +320,7 @@ function GatesDetail({ report }: { report: PipelineResult }) {
           : gate.status === GateStatus.Warning ? "yellow" : "gray";
         return (
           <Text key={gate.name}>
-            {"  "}<Text color={color}>{icon}</Text> {gate.name.padEnd(20)} <Text color="gray">{gate.message} ({gate.durationMs}ms)</Text>
+            <Text color={color}>{icon}</Text> {gate.name.padEnd(20)} <Text color="gray">{gate.message} ({gate.durationMs}ms)</Text>
           </Text>
         );
       })}
@@ -298,13 +334,12 @@ function CoveragePanel({ coverage }: { coverage: CoverageMetrics }) {
   const trendColor = coverage.trend === "up" ? "green" : coverage.trend === "down" ? "red" : "gray";
 
   return (
-    <Box flexDirection="column" marginBottom={1}>
-      <Text bold> Coverage</Text>
-      <Box>
-        <Text>  Lines: </Text><Text color={colorFor(coverage.lines)}>{coverage.lines}%</Text>
-        <Text> </Text><Text color={trendColor}>{trendIcon}</Text>
-        <Text color="gray">  |  Branches: </Text><Text color={colorFor(coverage.branches)}>{coverage.branches}%</Text>
-        <Text color="gray">  |  Functions: </Text><Text color={colorFor(coverage.functions)}>{coverage.functions}%</Text>
+    <Box borderStyle="single" borderColor="gray" flexDirection="column" paddingX={1} marginBottom={1}>
+      <Text bold>Coverage</Text>
+      <Box gap={3}>
+        <Text>Lines: <Text color={colorFor(coverage.lines)}>{coverage.lines}%</Text> <Text color={trendColor}>{trendIcon}</Text></Text>
+        <Text>Branches: <Text color={colorFor(coverage.branches)}>{coverage.branches}%</Text></Text>
+        <Text>Functions: <Text color={colorFor(coverage.functions)}>{coverage.functions}%</Text></Text>
       </Box>
     </Box>
   );
@@ -313,17 +348,16 @@ function CoveragePanel({ coverage }: { coverage: CoverageMetrics }) {
 function SecurityPanel({ security }: { security: SecurityMetrics }) {
   const total = security.critical + security.high + security.medium + security.low;
   return (
-    <Box flexDirection="column" marginBottom={1}>
-      <Text bold> Security</Text>
+    <Box borderStyle="single" borderColor="gray" flexDirection="column" paddingX={1} marginBottom={1}>
+      <Text bold>Security</Text>
       {total === 0 ? (
-        <Text color="green">  ✓ No findings</Text>
+        <Text color="green">✓ No findings</Text>
       ) : (
-        <Box>
-          <Text>  </Text>
-          {security.critical > 0 && <Text color="red">{security.critical} CRIT </Text>}
-          {security.high > 0 && <Text color="red">{security.high} HIGH </Text>}
-          {security.medium > 0 && <Text color="yellow">{security.medium} MED </Text>}
-          {security.low > 0 && <Text color="gray">{security.low} LOW </Text>}
+        <Box gap={2}>
+          {security.critical > 0 && <Text color="red">{security.critical} CRITICAL</Text>}
+          {security.high > 0 && <Text color="red">{security.high} HIGH</Text>}
+          {security.medium > 0 && <Text color="yellow">{security.medium} MEDIUM</Text>}
+          {security.low > 0 && <Text color="gray">{security.low} LOW</Text>}
         </Box>
       )}
     </Box>
@@ -335,35 +369,29 @@ function CodeMetricsPanel({ metrics }: { metrics: CodeQualityMetrics }) {
   const complexityColor = metrics.averageComplexity <= 5 ? "green" : metrics.averageComplexity <= 10 ? "yellow" : "red";
 
   return (
-    <Box flexDirection="column" marginBottom={1}>
-      <Text bold> Code Quality</Text>
-      <Box>
-        <Text>  Tests: </Text><Text color={ratioColor}>{metrics.testRatio.toFixed(2)}</Text>
-        <Text color="gray"> ({metrics.testFiles}/{metrics.sourceFiles})</Text>
-        <Text color="gray">  |  Complexity: </Text><Text color={complexityColor}>{metrics.averageComplexity.toFixed(1)} avg</Text>
+    <Box borderStyle="single" borderColor="gray" flexDirection="column" paddingX={1} marginBottom={1}>
+      <Text bold>Code Quality</Text>
+      <Box gap={3}>
+        <Text>Test ratio: <Text color={ratioColor}>{metrics.testRatio.toFixed(2)}</Text> <Text color="gray">({metrics.testFiles}/{metrics.sourceFiles})</Text></Text>
+        <Text>Complexity: <Text color={complexityColor}>{metrics.averageComplexity.toFixed(1)} avg</Text></Text>
         {metrics.highComplexityCount > 0 && (
-          <Text color="yellow"> ⚠ {metrics.highComplexityCount} high</Text>
+          <Text color="yellow">⚠ {metrics.highComplexityCount} high</Text>
         )}
       </Box>
     </Box>
   );
 }
 
-// ── Footer (keybinds + inline gate icons) ──────────────────────────
+// ── Footer ─────────────────────────────────────────────────────────
 
 function FooterBar({ qualityReport }: { qualityReport?: PipelineResult }) {
   return (
-    <Box>
+    <Box paddingX={1}>
       <Box flexGrow={1}>
-        <Text color="gray"> [</Text><Text bold>d</Text><Text color="gray">]dashboard [</Text>
-        <Text bold>q</Text><Text color="gray">]quit</Text>
+        <Text color="gray">[</Text><Text bold>d</Text><Text color="gray">] dashboard  [</Text>
+        <Text bold>q</Text><Text color="gray">] quit</Text>
       </Box>
-      {qualityReport && (
-        <Box>
-          <InlineGates results={qualityReport.results} />
-          <Text> </Text>
-        </Box>
-      )}
+      {qualityReport && <InlineGates results={qualityReport.results} />}
     </Box>
   );
 }
@@ -378,7 +406,6 @@ function InlineGates({ results }: { results: GateResult[] }) {
         const color = gate.status === GateStatus.Passed ? "green"
           : gate.status === GateStatus.Failed ? "red"
           : gate.status === GateStatus.Warning ? "yellow" : "gray";
-        // Shorten gate names for footer
         const short = gate.name
           .replace("tests-pass", "tests")
           .replace("coverage-threshold", "cov")
@@ -395,7 +422,7 @@ function InlineGates({ results }: { results: GateResult[] }) {
   );
 }
 
-// ── Gate Failure Inline (shown below header when gates fail) ───────
+// ── Gate Failure Banner ────────────────────────────────────────────
 
 function GateFailureBanner({ report }: { report: PipelineResult }) {
   if (report.passed) return null;
@@ -403,12 +430,13 @@ function GateFailureBanner({ report }: { report: PipelineResult }) {
   if (failed.length === 0) return null;
 
   return (
-    <Box flexDirection="column">
+    <Box borderStyle="single" borderColor="red" flexDirection="column" paddingX={1}>
+      <Text bold color="red">Gate Failures</Text>
       {failed.map((gate) => (
-        <Box key={gate.name}>
-          <Text color="red"> ✗ {gate.name}: </Text>
+        <Text key={gate.name}>
+          <Text color="red">✗ {gate.name}: </Text>
           <Text color="gray">{gate.message.slice(0, 80)}</Text>
-        </Box>
+        </Text>
       ))}
     </Box>
   );
@@ -430,32 +458,36 @@ function Dashboard({ state, startedAt }: { state: DashboardState; startedAt: num
     if (input === "d") setShowOverlay((prev) => !prev);
   });
 
-  // Header = 3 lines, footer = 1 line, separator = 1 line, gate failure banner
+  // Calculate available height for main content
+  // Title = 3 (border + text + border), Status = 6, Footer = 1, gate failures variable
   const gateFailureLines = state.qualityReport && !state.qualityReport.passed
-    ? state.qualityReport.results.filter(r => r.status === GateStatus.Failed || r.status === GateStatus.Error).length
+    ? state.qualityReport.results.filter(r => r.status === GateStatus.Failed || r.status === GateStatus.Error).length + 2
     : 0;
-  const chromeHeight = 3 + 1 + 1 + gateFailureLines; // header + separator + footer + failures
-  const contentHeight = Math.max(3, termHeight - chromeHeight);
+  const chromeHeight = 3 + 6 + 1 + gateFailureLines;
+  const contentHeight = Math.max(5, termHeight - chromeHeight);
 
   return (
     <Box flexDirection="column" width={termWidth} height={termHeight}>
-      <CompactHeader state={state} tick={tick} startedAt={startedAt} />
+      {/* Title */}
+      <TitleBar tick={tick} phase={state.loop.phase} />
 
-      {/* Gate failure banner (inline, only when gates fail) */}
+      {/* Status */}
+      <StatusBox state={state} startedAt={startedAt} />
+
+      {/* Gate failure banner (only when gates fail) */}
       {state.qualityReport && !state.qualityReport.passed && (
         <GateFailureBanner report={state.qualityReport} />
       )}
-
-      {/* Separator */}
-      <Box>
-        <Text color="gray">{" ─".repeat(Math.min(40, Math.floor(termWidth / 2)))}</Text>
-      </Box>
 
       {/* Main content: overlay or Claude output */}
       {showOverlay ? (
         <DashboardOverlay state={state} />
       ) : (
-        <ClaudeOutput logs={state.claudeLogs ?? []} height={contentHeight} width={termWidth} />
+        <ClaudeOutputBox
+          logs={state.claudeLogs ?? []}
+          height={contentHeight}
+          width={termWidth}
+        />
       )}
 
       {/* Footer */}
@@ -466,15 +498,15 @@ function Dashboard({ state, startedAt }: { state: DashboardState; startedAt: num
 
 // ── Public API ─────────────────────────────────────────────────────
 
-/** Exported update function type for external state pushing */
 export type DashboardUpdater = (state: DashboardState) => void;
 
 /**
  * Start the live Ink dashboard and return an updater function.
  *
  * Layout:
- * - Compact 3-line header (status, task, TDD pipeline)
- * - Full-width Claude output (85%+ of screen)
+ * - Title bar (bordered, centered)
+ * - Status box (bordered: phase, progress, task, TDD pipeline)
+ * - Claude output box (bordered, fills remaining space)
  * - Footer with keybinds + gate status icons
  * - Press 'd' to toggle dashboard overlay (cost, coverage, security, gates)
  */
@@ -497,7 +529,7 @@ export function startLiveDashboard(
     return <Dashboard state={dashState} startedAt={startedAt} />;
   }
 
-  // Enter alternate screen buffer (like vim/htop)
+  // Enter alternate screen buffer
   process.stdout.write("\x1b[?1049h");
   process.stdout.write("\x1b[H");
 

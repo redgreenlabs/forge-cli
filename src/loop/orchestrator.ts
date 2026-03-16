@@ -154,7 +154,7 @@ export class LoopOrchestrator {
   private _costTotal = 0;
   private _costCurrentTask = 0;
   private _costPerPhase: Record<string, number> = {};
-  private _apiCallCount = 0;
+  private _executionCount = 0;
 
   constructor(options: OrchestratorOptions) {
     this._config = options.config;
@@ -902,7 +902,7 @@ export class LoopOrchestrator {
         // Accumulate cost metrics
         this._costTotal += cost;
         this._costCurrentTask += cost;
-        this._apiCallCount++;
+        this._executionCount++;
         const phase = this.engine.state.phase;
         this._costPerPhase[phase] = (this._costPerPhase[phase] ?? 0) + cost;
 
@@ -954,11 +954,11 @@ export class LoopOrchestrator {
       security: this._securityMetrics,
       rateLimitWaiting: this._rateLimitWaiting,
       claudeLogs: this._claudeLogs,
-      cost: this._apiCallCount > 0 ? {
+      cost: this._executionCount > 0 ? {
         totalUsd: this._costTotal,
         currentTaskUsd: this._costCurrentTask,
         perPhase: { ...this._costPerPhase },
-        apiCalls: this._apiCallCount,
+        executions: this._executionCount,
         completedTasks: this.engine.state.tasksCompleted,
       } : undefined,
     });

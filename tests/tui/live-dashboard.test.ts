@@ -130,13 +130,13 @@ describe("DashboardState interface", () => {
       totalUsd: 1.234,
       currentTaskUsd: 0.456,
       perPhase: { implementing: 0.8, testing: 0.3, quality_gate: 0.134 },
-      apiCalls: 12,
+      executions: 12,
       completedTasks: 3,
     };
     const state = makeDashState({ cost });
     expect(state.cost).toEqual(cost);
     expect(state.cost?.totalUsd).toBe(1.234);
-    expect(state.cost?.apiCalls).toBe(12);
+    expect(state.cost?.executions).toBe(12);
     expect(state.cost?.perPhase.implementing).toBe(0.8);
   });
 
@@ -145,7 +145,7 @@ describe("DashboardState interface", () => {
       totalUsd: 3.0,
       currentTaskUsd: 0.5,
       perPhase: {},
-      apiCalls: 15,
+      executions: 15,
       completedTasks: 6,
     };
     const avgPerTask = cost.completedTasks > 0 ? cost.totalUsd / cost.completedTasks : 0;
@@ -157,10 +157,10 @@ describe("DashboardState interface", () => {
       totalUsd: 2.0,
       currentTaskUsd: 0.1,
       perPhase: {},
-      apiCalls: 10,
+      executions: 10,
       completedTasks: 4,
     };
-    const avgPerCall = cost.apiCalls > 0 ? cost.totalUsd / cost.apiCalls : 0;
+    const avgPerCall = cost.executions > 0 ? cost.totalUsd / cost.executions : 0;
     expect(avgPerCall).toBe(0.2);
   });
 
@@ -188,7 +188,7 @@ describe("DashboardState interface", () => {
         totalUsd: 0.567,
         currentTaskUsd: 0.123,
         perPhase: { implementing: 0.4, testing: 0.167 },
-        apiCalls: 5,
+        executions: 5,
         completedTasks: 2,
       },
     });
