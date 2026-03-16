@@ -25,6 +25,8 @@ export {
 export {
   getAgentPrompt,
   getAgentAllowedTools,
+  getTddSystemPrompt,
+  getTddAllowedTools,
   getAgentDefinition,
   selectAgentForTask,
   type AgentDefinition,

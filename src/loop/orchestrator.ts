@@ -2,8 +2,8 @@ import type { ForgeConfig } from "../config/schema.js";
 import { AgentRole } from "../config/schema.js";
 import {
   selectAgentForTask,
-  getAgentPrompt,
-  getAgentAllowedTools,
+  getTddSystemPrompt,
+  getTddAllowedTools,
 } from "../agents/roles.js";
 import {
   LoopEngine,
@@ -432,6 +432,13 @@ export class LoopOrchestrator {
     const taskContext = `Task: ${task.title}\nAcceptance criteria: ${(task as TaskNode & { acceptanceCriteria?: string[] }).acceptanceCriteria?.join(", ") ?? ""}`;
     const handoffSection = handoffPrompt ? `\n\n${handoffPrompt}` : "";
 
+    // Unified TDD prompt and tools — stays constant across --continue calls
+    // so Claude keeps full context (read files, test results) from previous phases.
+    const tddSystemPrompt = this._extraSystemContext
+      ? `${this._extraSystemContext}\n\n${getTddSystemPrompt()}`
+      : getTddSystemPrompt();
+    const tddTools = getTddAllowedTools(this._config.commands);
+
     // Accumulates files modified across all phases for security scan and commits
     const allFilesModified: string[] = [];
 
@@ -443,15 +450,12 @@ export class LoopOrchestrator {
     return {
       executeRedPhase: async (): Promise<PhaseResult> => {
         this.logAgent(AgentRole.Tester, "red-phase", "Writing failing test");
-        const testerPrompt = this._extraSystemContext
-          ? `${this._extraSystemContext}\n\n${getAgentPrompt(AgentRole.Tester)}`
-          : getAgentPrompt(AgentRole.Tester);
         const { stderrHandler, streamHandler } = this.makeHandlers(AgentRole.Tester);
         // Start a fresh session for each task (don't reuse cross-task sessions)
         const response = await this.executeWithSessionRotation({
           prompt: `[TDD RED PHASE] Write a failing test for:\n${taskContext}${handoffSection}\n\nWrite ONLY the test. Do NOT implement the feature yet.`,
-          systemPrompt: testerPrompt,
-          allowedTools: getAgentAllowedTools(AgentRole.Tester, this._config.commands),
+          systemPrompt: tddSystemPrompt,
+          allowedTools: tddTools,
           timeout,
           onStderr: stderrHandler,
           onStreamEvent: streamHandler,
@@ -481,16 +485,13 @@ export class LoopOrchestrator {
 
       executeGreenPhase: async (): Promise<PhaseResult> => {
         this.logAgent(AgentRole.Implementer, "green-phase", "Implementing to pass tests");
-        const implPrompt = this._extraSystemContext
-          ? `${this._extraSystemContext}\n\n${getAgentPrompt(AgentRole.Implementer)}`
-          : getAgentPrompt(AgentRole.Implementer);
         const { stderrHandler: implStderr, streamHandler: implStream } = this.makeHandlers(AgentRole.Implementer);
         // Continue the session from the red phase so Claude already has test files in context
         const greenSessionId = taskSessionId ?? getSessionId();
         const response = await this.executeWithSessionRotation({
           prompt: `[TDD GREEN PHASE] Implement the MINIMAL code to make the failing test pass:\n${taskContext}${handoffSection}\n\nWrite only enough code to pass the test. Keep it simple.`,
-          systemPrompt: implPrompt,
-          allowedTools: getAgentAllowedTools(AgentRole.Implementer, this._config.commands),
+          systemPrompt: tddSystemPrompt,
+          allowedTools: tddTools,
           timeout,
           onStderr: implStderr,
           onStreamEvent: implStream,
@@ -526,16 +527,13 @@ export class LoopOrchestrator {
 
       executeRefactorPhase: async (): Promise<PhaseResult> => {
         this.logAgent(AgentRole.Implementer, "refactor-phase", "Refactoring");
-        const refactorPrompt = this._extraSystemContext
-          ? `${this._extraSystemContext}\n\n${getAgentPrompt(AgentRole.Implementer)}`
-          : getAgentPrompt(AgentRole.Implementer);
         const { stderrHandler: refStderr, streamHandler: refStream } = this.makeHandlers(AgentRole.Implementer);
         // Continue the session from green phase — test + impl files already in context
         const refactorSessionId = taskSessionId ?? getSessionId();
         const response = await this.executeWithSessionRotation({
           prompt: `[TDD REFACTOR PHASE] Improve code quality without changing behavior:\n${taskContext}\n\nAll tests MUST still pass after refactoring.`,
-          systemPrompt: refactorPrompt,
-          allowedTools: getAgentAllowedTools(AgentRole.Implementer, this._config.commands),
+          systemPrompt: tddSystemPrompt,
+          allowedTools: tddTools,
           timeout,
           onStderr: refStderr,
           onStreamEvent: refStream,
@@ -622,15 +620,12 @@ export class LoopOrchestrator {
           .map((r) => `- ${r.name}: ${r.message}`)
           .join("\n");
         this.logAgent(AgentRole.Implementer, "fix-gates", `Fixing ${report.summary.failed + report.summary.errors} gate failures`);
-        const implPrompt = this._extraSystemContext
-          ? `${this._extraSystemContext}\n\n${getAgentPrompt(AgentRole.Implementer)}`
-          : getAgentPrompt(AgentRole.Implementer);
         const { stderrHandler, streamHandler } = this.makeHandlers(AgentRole.Implementer);
         const fixSessionId = taskSessionId ?? getSessionId();
         const response = await this.executeWithSessionRotation({
           prompt: `[FIX QUALITY GATES] The following quality gates failed after implementation:\n\n${failedGates}\n\nContext: ${taskContext}\n\nFix these issues. Run the failing commands to verify your fixes work. Do NOT skip or disable checks — fix the underlying code issues.`,
-          systemPrompt: implPrompt,
-          allowedTools: getAgentAllowedTools(AgentRole.Implementer, this._config.commands),
+          systemPrompt: tddSystemPrompt,
+          allowedTools: tddTools,
           timeout,
           onStderr: stderrHandler,
           onStreamEvent: streamHandler,

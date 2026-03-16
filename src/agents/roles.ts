@@ -180,6 +180,32 @@ export function getAgentPrompt(role: AgentRole): string {
 }
 
 /**
+ * Build a unified TDD system prompt that covers all phases.
+ *
+ * Combines tester + implementer instructions into a single prompt so the
+ * system prompt stays constant across `--continue` calls, allowing Claude
+ * to keep full context (read files, test results) from previous phases.
+ */
+export function getTddSystemPrompt(): string {
+  return `You are a TDD-driven developer. You work in strict Red-Green-Refactor phases.
+Your prompt will tell you which phase you are in — follow it precisely.
+
+## RED PHASE (Tester role)
+${agentDefinitions[AgentRole.Tester].prompt}
+
+## GREEN PHASE (Implementer role)
+${agentDefinitions[AgentRole.Implementer].prompt}
+
+## REFACTOR PHASE (Implementer role)
+Improve code quality, reduce duplication, and clean up without changing behavior.
+All tests MUST still pass after refactoring.
+
+## FIX PHASE (Implementer role)
+When quality gates fail, fix the underlying code issues. Run the failing commands
+to verify your fixes. Do NOT skip or disable checks.`;
+}
+
+/**
  * Get the allowed tools for a specific agent role.
  *
  * When project commands are provided, Bash tool permissions are derived
@@ -234,6 +260,18 @@ export function getAgentAllowedTools(
   }
 
   return base;
+}
+
+/**
+ * Get the union of allowed tools for TDD phases (tester + implementer).
+ *
+ * Used alongside getTddSystemPrompt() so that tool permissions stay
+ * constant across `--continue` calls.
+ */
+export function getTddAllowedTools(commands?: AgentProjectCommands): string[] {
+  const testerTools = getAgentAllowedTools(AgentRole.Tester, commands);
+  const implTools = getAgentAllowedTools(AgentRole.Implementer, commands);
+  return [...new Set([...testerTools, ...implTools])];
 }
 
 /** Get the full agent definition for a role */
