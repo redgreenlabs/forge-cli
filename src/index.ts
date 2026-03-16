@@ -120,6 +120,7 @@ export {
   parseDecomposeResponse,
   decomposeTaskList,
   type DecomposeConfig,
+  type DecomposeProgress,
   type DecomposeResult,
   type DecomposeListResult,
 } from "./prd/decomposer.js";

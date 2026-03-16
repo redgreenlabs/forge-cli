@@ -16,6 +16,16 @@ export interface DecomposeConfig {
   complexityThreshold: number;
 }
 
+/** Progress callback for decomposition */
+export interface DecomposeProgress {
+  taskId: string;
+  taskTitle: string;
+  index: number;
+  total: number;
+  status: "decomposing" | "decomposed" | "skipped" | "failed";
+  subtaskCount?: number;
+}
+
 /** Result of decomposing a task list */
 export interface DecomposeListResult {
   tasks: PrdTask[];
@@ -274,25 +284,42 @@ async function decomposeTask(
 export async function decomposeTaskList(
   tasks: PrdTask[],
   executor: ClaudeExecutor,
-  config: DecomposeConfig
+  config: DecomposeConfig,
+  onProgress?: (progress: DecomposeProgress) => void
 ): Promise<DecomposeListResult> {
   if (!config.enabled) {
+    return { tasks, decomposedCount: 0, subtasksCreated: 0 };
+  }
+
+  // First pass: identify which tasks need decomposition
+  const toDecompose: { index: number; task: PrdTask }[] = [];
+  for (let i = 0; i < tasks.length; i++) {
+    const task = tasks[i]!;
+    if (task.status === TaskStatus.Done || task.status === TaskStatus.Skipped) continue;
+    if (task.id.includes(".")) continue;
+    const complexity = estimateTaskComplexity(task);
+    if (complexity >= config.complexityThreshold) {
+      toDecompose.push({ index: i, task });
+    }
+  }
+
+  if (toDecompose.length === 0) {
     return { tasks, decomposedCount: 0, subtasksCreated: 0 };
   }
 
   let currentTasks = [...tasks];
   let decomposedCount = 0;
   let subtasksCreated = 0;
+  for (let di = 0; di < toDecompose.length; di++) {
+    const { task } = toDecompose[di]!;
 
-  for (let i = 0; i < currentTasks.length; i++) {
-    const task = currentTasks[i]!;
-
-    // Skip done, skipped, or already-decomposed tasks
-    if (task.status === TaskStatus.Done || task.status === TaskStatus.Skipped) continue;
-    if (task.id.includes(".")) continue;
-
-    const complexity = estimateTaskComplexity(task);
-    if (complexity < config.complexityThreshold) continue;
+    onProgress?.({
+      taskId: task.id,
+      taskTitle: task.title,
+      index: di + 1,
+      total: toDecompose.length,
+      status: "decomposing",
+    });
 
     const result = await decomposeTask(task, executor, config);
 
@@ -304,8 +331,23 @@ export async function decomposeTaskList(
       );
       decomposedCount++;
       subtasksCreated += result.subtasks.length;
-      // Adjust index to skip past newly inserted subtasks
-      i += result.subtasks.length - 1;
+
+      onProgress?.({
+        taskId: task.id,
+        taskTitle: task.title,
+        index: di + 1,
+        total: toDecompose.length,
+        status: "decomposed",
+        subtaskCount: result.subtasks.length,
+      });
+    } else {
+      onProgress?.({
+        taskId: task.id,
+        taskTitle: task.title,
+        index: di + 1,
+        total: toDecompose.length,
+        status: result.subtasks.length === 0 ? "failed" : "skipped",
+      });
     }
   }
 

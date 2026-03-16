@@ -12,6 +12,7 @@ import { scanTasks, shouldMarkDone, type ScanResult } from "./scan.js";
 import {
   decomposeTaskList,
   type DecomposeConfig,
+  type DecomposeProgress,
 } from "../prd/decomposer.js";
 import { ClaudeCodeExecutor } from "../loop/executor.js";
 import { loadConfig } from "../config/loader.js";
@@ -356,7 +357,7 @@ export async function importPrdWithScan(
 export async function importPrdWithDecompose(
   filePath: string,
   projectRoot: string,
-  options?: { verbose?: boolean; timeout?: number }
+  options?: { verbose?: boolean; timeout?: number; onProgress?: (progress: DecomposeProgress) => void }
 ): Promise<ImportResult> {
   // Step 1: Normal import
   const result = importPrd(filePath, projectRoot);
@@ -384,7 +385,8 @@ export async function importPrdWithDecompose(
   const decomposeResult = await decomposeTaskList(
     prdData.tasks,
     executor,
-    decomposeConfig
+    decomposeConfig,
+    options?.onProgress
   );
 
   if (decomposeResult.decomposedCount === 0) {

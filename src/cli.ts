@@ -521,9 +521,20 @@ program
     let result;
     if (options.decompose !== false) {
       const { importPrdWithDecompose } = await import("./commands/import.js");
-      console.log(chalk.gray("  Decomposing complex tasks..."));
+      console.log(chalk.gray("  Decomposing complex tasks...\n"));
       result = await importPrdWithDecompose(resolve(cwd, file), cwd, {
         verbose: options.verbose,
+        onProgress: (progress) => {
+          const prefix = chalk.gray(`  [${progress.index}/${progress.total}]`);
+          const title = progress.taskTitle.slice(0, 50);
+          if (progress.status === "decomposing") {
+            process.stdout.write(`${prefix} ${chalk.cyan("⟳")} ${title}...`);
+          } else if (progress.status === "decomposed") {
+            process.stdout.write(`\r${prefix} ${chalk.green("✓")} ${title} → ${chalk.bold(progress.subtaskCount + " subtasks")}\n`);
+          } else if (progress.status === "failed") {
+            process.stdout.write(`\r${prefix} ${chalk.red("✗")} ${title} — ${chalk.red("failed")}\n`);
+          }
+        },
       });
     } else if (options.scan !== false) {
       const { importPrdWithScan } = await import("./commands/import.js");
@@ -880,7 +891,7 @@ program
       return;
     }
 
-    console.log(chalk.cyan("\nDecomposing with Claude..."));
+    console.log(chalk.cyan("\nDecomposing with Claude...\n"));
 
     const { ClaudeCodeExecutor } = await import("./loop/executor.js");
     const { decomposeTaskList } = await import("./prd/decomposer.js");
@@ -890,6 +901,23 @@ program
       enabled: true,
       maxSubtasks,
       complexityThreshold: threshold,
+    }, (progress) => {
+      const prefix = chalk.gray(`  [${progress.index}/${progress.total}]`);
+      const title = progress.taskTitle.slice(0, 50);
+      switch (progress.status) {
+        case "decomposing":
+          process.stdout.write(`${prefix} ${chalk.cyan("⟳")} Decomposing: ${title}...`);
+          break;
+        case "decomposed":
+          process.stdout.write(`\r${prefix} ${chalk.green("✓")} ${title} → ${chalk.bold(progress.subtaskCount + " subtasks")}\n`);
+          break;
+        case "failed":
+          process.stdout.write(`\r${prefix} ${chalk.red("✗")} ${title} — ${chalk.red("failed, keeping original")}\n`);
+          break;
+        case "skipped":
+          process.stdout.write(`\r${prefix} ${chalk.yellow("–")} ${title} — ${chalk.yellow("too few subtasks, keeping original")}\n`);
+          break;
+      }
     });
 
     if (result.decomposedCount === 0) {
