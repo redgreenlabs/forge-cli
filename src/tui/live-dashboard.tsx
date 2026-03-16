@@ -98,6 +98,9 @@ function CompactHeader({ state, tick, startedAt }: {
         <Text>] </Text>
         <Text>{loop.tasksCompleted}/{loop.totalTasks}</Text>
         <Text color="gray"> {formatElapsed(elapsed)}</Text>
+        {loop.filesModifiedThisIteration > 0 && (
+          <Text color="gray"> {loop.filesModifiedThisIteration}files</Text>
+        )}
         <Text color="gray"> ↻</Text><Text>{commitCount}</Text>
         {cost && <Text color="yellow"> {formatCost(cost.totalUsd)}</Text>}
         <Text color={cbColor}> {loop.circuitBreakerState === CircuitBreakerState.Closed ? "" : ` ⚡${loop.circuitBreakerState.toUpperCase()}`}</Text>

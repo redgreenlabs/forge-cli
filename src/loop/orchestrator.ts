@@ -353,6 +353,15 @@ export class LoopOrchestrator {
         this._qualityReport = pipelineResult.qualityReport;
       }
 
+      // Complete the TDD cycle when all 3 phases ran successfully
+      const hasFullCycle = pipelineResult.tddPhasesCompleted.length === 3
+        && pipelineResult.tddPhasesCompleted.includes(TddPhase.Red)
+        && pipelineResult.tddPhasesCompleted.includes(TddPhase.Green)
+        && pipelineResult.tddPhasesCompleted.includes(TddPhase.Refactor);
+      if (hasFullCycle) {
+        this.tddEnforcer.completeCycle();
+      }
+
       // Mark task complete when the pipeline succeeds.
       // A successful TDD cycle (test + implementation + refactor + quality gates)
       // IS the completion signal — no need for a separate exit signal from Claude.
