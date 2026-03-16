@@ -25,7 +25,8 @@ describe("Claude Code Executor", () => {
         timeout: 900000,
       });
       expect(args).toContain("--output-format");
-      expect(args).toContain("json");
+      expect(args).toContain("stream-json");
+      expect(args).toContain("--verbose");
     });
 
     it("should include allowed tools", () => {

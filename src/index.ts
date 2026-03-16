@@ -159,6 +159,7 @@ export {
   parseClaudeResponse,
   type ClaudeExecOptions,
   type RawClaudeOutput,
+  type StreamEvent,
 } from "./loop/executor.js";
 
 // Session Manager

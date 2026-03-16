@@ -14,6 +14,28 @@ export interface ClaudeExecOptions {
   maxBudgetUsd?: number;
   /** Callback for real-time stderr lines from Claude CLI */
   onStderr?: (line: string) => void;
+  /** Callback for real-time stream-json events from Claude CLI stdout */
+  onStreamEvent?: (event: StreamEvent) => void;
+}
+
+/** A parsed stream-json event from Claude CLI */
+export interface StreamEvent {
+  type: string;
+  subtype?: string;
+  message?: {
+    content?: Array<{
+      type: string;
+      text?: string;
+      name?: string;
+      input?: Record<string, unknown>;
+    }>;
+  };
+  result?: string;
+  session_id?: string;
+  total_cost_usd?: number;
+  duration_ms?: number;
+  /** Raw JSON string for custom parsing */
+  raw: string;
 }
 
 /** Raw output from Claude CLI process */
@@ -39,8 +61,9 @@ export function buildClaudeArgs(options: ClaudeExecOptions): string[] {
   // Prompt (non-interactive mode)
   args.push("-p", options.prompt);
 
-  // Output format
-  args.push("--output-format", "json");
+  // Output format: stream-json for real-time event streaming
+  args.push("--output-format", "stream-json");
+  args.push("--verbose");
 
   // Skip permissions so Claude doesn't hang waiting for interactive prompts.
   // This is safe because forge controls which tools are allowed via --allowedTools.
@@ -79,7 +102,7 @@ export function buildClaudeArgs(options: ClaudeExecOptions): string[] {
  *
  * Extracts FORGE_STATUS block for structured metadata.
  */
-export function parseClaudeResponse(raw: RawClaudeOutput): ClaudeResponse {
+export function parseClaudeResponse(raw: RawClaudeOutput, streamEvents?: StreamEvent[]): ClaudeResponse {
   // Handle error exit codes
   if (raw.exitCode !== 0) {
     const fallbackMsg = `Process exited with code ${raw.exitCode}`;
@@ -112,7 +135,12 @@ export function parseClaudeResponse(raw: RawClaudeOutput): ClaudeResponse {
     };
   }
 
-  // Try to parse as JSON
+  // Stream-json mode: extract result from stream events
+  if (streamEvents && streamEvents.length > 0) {
+    return parseStreamEvents(streamEvents, raw);
+  }
+
+  // Fallback: try to parse as batch JSON (backwards compat)
   let resultText = "";
   let conversationItems: ConversationItem[] = [];
   try {
@@ -171,6 +199,95 @@ export function parseClaudeResponse(raw: RawClaudeOutput): ClaudeResponse {
     testResults,
     error: null,
     resultText: resultText || raw.stdout,
+  };
+}
+
+/**
+ * Parse stream-json events into a ClaudeResponse.
+ *
+ * Stream events include:
+ * - system/init: session info
+ * - assistant: text and tool_use blocks
+ * - rate_limit_event: API rate limit status
+ * - result: final result with cost and duration
+ */
+function parseStreamEvents(events: StreamEvent[], raw: RawClaudeOutput): ClaudeResponse {
+  // Find the result event
+  const resultEvent = events.find((e) => e.type === "result");
+  const resultText = (resultEvent?.result as string) ?? "";
+
+  // Check for rate limit rejection
+  for (const event of events) {
+    if (event.type === "rate_limit_event") {
+      try {
+        const parsed = JSON.parse(event.raw);
+        if (parsed.rate_limit_info?.status === "rejected") {
+          return {
+            status: "error",
+            exitSignal: false,
+            filesModified: [],
+            testsPass: false,
+            testResults: { total: 0, passed: 0, failed: 0 },
+            error: "API rate limit reached (rate_limit_event rejected)",
+            rateLimited: true,
+          };
+        }
+      } catch { /* ignore parse error */ }
+    }
+  }
+
+  // Convert stream events to ConversationItem format for reuse of existing extractors
+  const conversationItems: ConversationItem[] = [];
+  for (const event of events) {
+    if (event.type === "assistant" && event.message?.content) {
+      conversationItems.push({
+        type: "assistant",
+        content: event.message.content as ConversationContent[],
+      });
+    }
+    if (event.type === "result") {
+      conversationItems.push({
+        type: "result",
+        result: event.result,
+      });
+    }
+  }
+
+  // Extract file paths from tool_use entries
+  const filesModified = extractFilesFromToolUse(conversationItems);
+
+  // Extract test results
+  const testResults = extractTestResults(conversationItems, resultText);
+
+  // Extract FORGE_STATUS block
+  const statusBlock = extractStatusBlock(resultText);
+  const exitSignal = statusBlock?.EXIT_SIGNAL === "true";
+
+  let testsPass = true;
+  if (testResults.total > 0) {
+    testsPass = testResults.failed === 0;
+  } else if (statusBlock?.TESTS_STATUS) {
+    testsPass = statusBlock.TESTS_STATUS === "PASSING";
+  }
+
+  // Detect context exhaustion from result event
+  let isError = false;
+  if (resultEvent) {
+    try {
+      const parsed = JSON.parse(resultEvent.raw);
+      isError = parsed.is_error === true;
+    } catch { /* ignore */ }
+  }
+
+  return {
+    status: isError ? "error" : "success",
+    exitSignal,
+    filesModified,
+    testsPass,
+    testResults,
+    error: isError ? (resultText || "Claude execution error") : null,
+    resultText: resultText || raw.stdout,
+    rawStderr: raw.stderr || undefined,
   };
 }
 
@@ -488,9 +605,36 @@ export class ClaudeCodeExecutor {
 
       let stdout = "";
       let stderr = "";
+      let stdoutBuffer = ""; // Buffer for incomplete JSON lines
+      const streamEvents: StreamEvent[] = [];
 
       proc.stdout?.on("data", (data: Buffer) => {
-        stdout += data.toString();
+        const text = data.toString();
+        stdout += text;
+
+        // Parse stream-json: each line is a complete JSON event
+        stdoutBuffer += text;
+        const lines = stdoutBuffer.split("\n");
+        // Keep the last (possibly incomplete) chunk in the buffer
+        stdoutBuffer = lines.pop() ?? "";
+
+        for (const line of lines) {
+          const trimmed = line.trim();
+          if (!trimmed) continue;
+          try {
+            const event = JSON.parse(trimmed) as StreamEvent;
+            event.raw = trimmed;
+            streamEvents.push(event);
+            if (options.onStreamEvent) {
+              options.onStreamEvent(event);
+            }
+          } catch {
+            // Not JSON — still feed to onStderr for raw logging
+            if (options.onStderr && trimmed) {
+              options.onStderr(trimmed);
+            }
+          }
+        }
       });
 
       proc.stderr?.on("data", (data: Buffer) => {
@@ -507,15 +651,24 @@ export class ClaudeCodeExecutor {
       });
 
       proc.on("close", (code) => {
+        // Flush any remaining buffer
+        if (stdoutBuffer.trim()) {
+          try {
+            const event = JSON.parse(stdoutBuffer.trim()) as StreamEvent;
+            event.raw = stdoutBuffer.trim();
+            streamEvents.push(event);
+          } catch { /* ignore */ }
+        }
+
         if (this.verbose) {
-          process.stderr.write(`[forge] Process exited with code ${code}, stdout ${stdout.length} bytes\n`);
+          process.stderr.write(`[forge] Process exited with code ${code}, stdout ${stdout.length} bytes, ${streamEvents.length} events\n`);
         }
         const raw: RawClaudeOutput = {
           stdout,
           stderr,
           exitCode: code ?? 1,
         };
-        const response = parseClaudeResponse(raw);
+        const response = parseClaudeResponse(raw, streamEvents);
 
         // Detect files changed by this execution via git
         if (response.status === "success" && response.filesModified.length === 0) {

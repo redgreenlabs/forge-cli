@@ -33,6 +33,7 @@ import {
   getHeadSha,
   detectFilesFromCommits,
   countCommitsBetween,
+  type StreamEvent,
 } from "./executor.js";
 
 /** Claude Code execution interface */
@@ -44,6 +45,7 @@ export interface ClaudeExecutor {
     timeout: number;
     sessionId?: string;
     onStderr?: (line: string) => void;
+    onStreamEvent?: (event: StreamEvent) => void;
   }) => Promise<ClaudeResponse>;
 }
 
@@ -455,12 +457,14 @@ export class LoopOrchestrator {
         const testerPrompt = this._extraSystemContext
           ? `${this._extraSystemContext}\n\n${getAgentPrompt(AgentRole.Tester)}`
           : getAgentPrompt(AgentRole.Tester);
+        const { stderrHandler, streamHandler } = this.makeHandlers(AgentRole.Tester);
         const response = await this.executeWithSessionRotation({
           prompt: `[TDD RED PHASE] Write a failing test for:\n${taskContext}${handoffSection}\n\nWrite ONLY the test. Do NOT implement the feature yet.`,
           systemPrompt: testerPrompt,
           allowedTools: getAgentAllowedTools(AgentRole.Tester, this._config.commands),
           timeout,
-          onStderr: this.makeStderrHandler(AgentRole.Tester),
+          onStderr: stderrHandler,
+          onStreamEvent: streamHandler,
         }, getSessionId);
 
         if (response.testResults) {
@@ -485,12 +489,14 @@ export class LoopOrchestrator {
         const implPrompt = this._extraSystemContext
           ? `${this._extraSystemContext}\n\n${getAgentPrompt(AgentRole.Implementer)}`
           : getAgentPrompt(AgentRole.Implementer);
+        const { stderrHandler: implStderr, streamHandler: implStream } = this.makeHandlers(AgentRole.Implementer);
         const response = await this.executeWithSessionRotation({
           prompt: `[TDD GREEN PHASE] Implement the MINIMAL code to make the failing test pass:\n${taskContext}${handoffSection}\n\nWrite only enough code to pass the test. Keep it simple.`,
           systemPrompt: implPrompt,
           allowedTools: getAgentAllowedTools(AgentRole.Implementer, this._config.commands),
           timeout,
-          onStderr: this.makeStderrHandler(AgentRole.Implementer),
+          onStderr: implStderr,
+          onStreamEvent: implStream,
         }, getSessionId);
 
         if (response.testResults) {
@@ -521,12 +527,14 @@ export class LoopOrchestrator {
         const refactorPrompt = this._extraSystemContext
           ? `${this._extraSystemContext}\n\n${getAgentPrompt(AgentRole.Implementer)}`
           : getAgentPrompt(AgentRole.Implementer);
+        const { stderrHandler: refStderr, streamHandler: refStream } = this.makeHandlers(AgentRole.Implementer);
         const response = await this.executeWithSessionRotation({
           prompt: `[TDD REFACTOR PHASE] Improve code quality without changing behavior:\n${taskContext}\n\nAll tests MUST still pass after refactoring.`,
           systemPrompt: refactorPrompt,
           allowedTools: getAgentAllowedTools(AgentRole.Implementer, this._config.commands),
           timeout,
-          onStderr: this.makeStderrHandler(AgentRole.Implementer),
+          onStderr: refStderr,
+          onStreamEvent: refStream,
         }, getSessionId);
 
         if (response.testResults) {
@@ -755,82 +763,107 @@ export class LoopOrchestrator {
   }
 
   /**
-   * Create an onStderr callback that parses Claude CLI output
-   * and logs tool usage as agent activity.
+   * Create stderr + stream event handlers for a phase execution.
+   *
+   * The stream handler parses rich JSON events from Claude CLI's
+   * stream-json output for the log pane and agent activity.
+   * The stderr handler is a fallback for non-JSON output.
    */
-  private makeStderrHandler(agentRole: string): (line: string) => void {
-    // Track last log time to throttle dashboard updates
+  private makeHandlers(agentRole: string): {
+    stderrHandler: (line: string) => void;
+    streamHandler: (event: StreamEvent) => void;
+  } {
     let lastLogTime = 0;
     const THROTTLE_MS = 500;
 
-    return (line: string) => {
-      // Always capture raw lines for the live log pane
+    const pushClaudeLog = (line: string) => {
+      if (!line) return;
+      this._claudeLogs.push(line);
+      if (this._claudeLogs.length > LoopOrchestrator.MAX_CLAUDE_LOGS) {
+        this._claudeLogs.splice(0, this._claudeLogs.length - LoopOrchestrator.MAX_CLAUDE_LOGS);
+      }
+    };
+
+    const stderrHandler = (line: string) => {
       const trimmed = line.trim();
       if (trimmed.length > 0) {
-        this._claudeLogs.push(trimmed);
-        if (this._claudeLogs.length > LoopOrchestrator.MAX_CLAUDE_LOGS) {
-          this._claudeLogs.splice(0, this._claudeLogs.length - LoopOrchestrator.MAX_CLAUDE_LOGS);
-        }
+        pushClaudeLog(trimmed);
       }
 
       const now = Date.now();
       if (now - lastLogTime < THROTTLE_MS) return;
 
-      // Claude CLI stderr patterns for tool usage
-      const toolMatch = line.match(/(?:Tool|Using|Calling|tool_use).*?(?:Read|Write|Edit|Glob|Grep|Bash|NotebookEdit)\s*(?:\(([^)]*)\))?/i);
-      if (toolMatch) {
-        lastLogTime = now;
-        const detail = toolMatch[1] ? toolMatch[1].slice(0, 60) : line.slice(0, 60);
-        this._agentLog.push({
-          timestamp: now,
-          agent: agentRole,
-          action: "tool",
-          detail,
-        });
-        this.emitDashboardUpdate();
-        return;
-      }
-
-      // File path patterns (reading/writing files)
-      const fileMatch = line.match(/(?:Reading|Writing|Editing|Searching)\s+(.+)/i);
-      if (fileMatch) {
-        lastLogTime = now;
-        this._agentLog.push({
-          timestamp: now,
-          agent: agentRole,
-          action: "file",
-          detail: fileMatch[1]!.slice(0, 60),
-        });
-        this.emitDashboardUpdate();
-        return;
-      }
-
-      // Cost/token patterns
-      const costMatch = line.match(/cost[:\s]+\$?([\d.]+)/i);
-      if (costMatch) {
-        lastLogTime = now;
-        this._agentLog.push({
-          timestamp: now,
-          agent: "system",
-          action: "cost",
-          detail: `$${costMatch[1]}`,
-        });
-        this.emitDashboardUpdate();
-        return;
-      }
-
-      // Generic activity: show truncated stderr as heartbeat (every 3s)
-      if (now - lastLogTime >= 3000 && line.length > 5) {
+      // Stderr patterns (fallback — most info now comes via stream events)
+      if (trimmed.length > 5 && now - lastLogTime >= 3000) {
         lastLogTime = now;
         this._agentLog.push({
           timestamp: now,
           agent: agentRole,
           action: "working",
-          detail: line.trim().slice(0, 60),
+          detail: trimmed.slice(0, 60),
         });
         this.emitDashboardUpdate();
       }
     };
+
+    const streamHandler = (event: StreamEvent) => {
+      const now = Date.now();
+
+      if (event.type === "assistant" && event.message?.content) {
+        for (const block of event.message.content) {
+          // Tool usage
+          if (block.type === "tool_use" && block.name) {
+            const filePath = (block.input?.file_path as string) ?? "";
+            const command = (block.input?.command as string) ?? "";
+            const detail = filePath
+              ? `${block.name}(${filePath.split("/").pop()})`
+              : command
+                ? `${block.name}: ${command.slice(0, 50)}`
+                : block.name;
+            pushClaudeLog(`⚡ ${detail}`);
+            if (now - lastLogTime >= THROTTLE_MS) {
+              lastLogTime = now;
+              this._agentLog.push({
+                timestamp: now,
+                agent: agentRole,
+                action: "tool",
+                detail,
+              });
+              this.emitDashboardUpdate();
+            }
+          }
+          // Text output
+          if (block.type === "text" && block.text) {
+            // Push first ~120 chars of text as a log line
+            const preview = block.text.replace(/\n/g, " ").slice(0, 120);
+            if (preview.length > 3) {
+              pushClaudeLog(preview);
+            }
+          }
+        }
+      }
+
+      // Result event — log cost
+      if (event.type === "result" && event.total_cost_usd) {
+        const costLine = `✓ Done — $${event.total_cost_usd.toFixed(4)} (${event.duration_ms ?? 0}ms)`;
+        pushClaudeLog(costLine);
+        lastLogTime = now;
+        this._agentLog.push({
+          timestamp: now,
+          agent: "system",
+          action: "cost",
+          detail: `$${event.total_cost_usd.toFixed(4)}`,
+        });
+        this.emitDashboardUpdate();
+      }
+
+      // Always emit update so log pane refreshes
+      if (this._claudeLogs.length > 0) {
+        this.emitDashboardUpdate();
+      }
+    };
+
+    return { stderrHandler, streamHandler };
   }
 
   /** Refresh code metrics from the project root (non-fatal on error) */
