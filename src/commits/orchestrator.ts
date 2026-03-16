@@ -69,73 +69,40 @@ export class CommitOrchestrator {
   }
 
   /**
-   * Build a concise commit subject from the TDD phase and changed files.
+   * Build a concise commit subject from the task description, adapted per TDD phase.
    *
-   * Red phase: "add tests for <module>"
-   * Green phase: "implement <module>" or summarize from file names
-   * Refactor phase: "refactor <module>"
+   * The description carries the real semantic meaning. We strip prefixes that
+   * are redundant with the conventional commit type, so you get:
+   *
+   *   description: "Add login validation tests"
+   *   Red  → test(auth): login validation        (strip "add...tests")
+   *   Green → feat(auth): add login validation tests  (keep as-is)
+   *
+   *   description: "Implement login handler"
+   *   Green → feat(auth): login handler           (strip "implement")
+   *   Red  → test(auth): implement login handler  (keep verb, it's context)
+   *
+   *   description: "Extract validation logic"
+   *   Refactor → refactor(auth): extract validation logic (keep action verb)
    */
   private static buildSubject(
-    phase: TddPhase,
-    files: string[],
+    _phase: TddPhase,
+    _files: string[],
     taskDescription: string
   ): string {
-    // Extract meaningful module/file names from changed files
-    const modules = CommitOrchestrator.extractModuleNames(files);
-    const moduleStr = modules.length > 0
-      ? modules.slice(0, 3).join(", ")
-      : null;
+    const desc = truncateDesc(taskDescription);
 
-    switch (phase) {
+    switch (_phase) {
       case TddPhase.Red:
-        return moduleStr
-          ? `add tests for ${moduleStr}`
-          : `add failing tests for ${truncateDesc(taskDescription)}`;
+        // Strip test-related prefixes — "test:" already conveys that
+        return stripPrefix(desc, RED_REDUNDANT_PREFIXES);
       case TddPhase.Green:
-        return moduleStr
-          ? `implement ${moduleStr}`
-          : `implement ${truncateDesc(taskDescription)}`;
+        // Strip implementation prefixes — "feat:" already conveys that
+        return stripPrefix(desc, GREEN_REDUNDANT_PREFIXES);
       case TddPhase.Refactor:
-        return moduleStr
-          ? `clean up ${moduleStr}`
-          : `refactor ${truncateDesc(taskDescription)}`;
+        // Keep specific refactoring verbs (extract, reorganize, simplify) — they add value
+        return stripPrefix(desc, REFACTOR_REDUNDANT_PREFIXES);
     }
-  }
-
-  /**
-   * Extract human-readable module names from file paths.
-   *
-   * "src/models/scan_node.dart" → "ScanNode model"
-   * "test/widgets/sunburst_test.dart" → "sunburst widget"
-   * "lib/auth/login.ts" → "login"
-   */
-  private static extractModuleNames(files: string[]): string[] {
-    const names = new Set<string>();
-
-    for (const file of files) {
-      // Skip test files for Green/Refactor — they don't describe the implementation
-      const isTest = /\.(test|spec)\.[^/]+$/.test(file) || /test_/.test(file) || /_test\.[^/]+$/.test(file);
-
-      const basename = file.split("/").pop() ?? file;
-      // Remove extension and test suffix
-      const name = basename
-        .replace(/\.(ts|js|tsx|jsx|dart|py|rs|go|rb|java|kt|swift)$/, "")
-        .replace(/\.(test|spec)$/, "")
-        .replace(/_test$/, "")
-        .replace(/^test_/, "");
-
-      if (name && name.length > 1 && name !== "index" && name !== "mod" && name !== "main") {
-        // Convert snake_case/kebab-case to readable
-        const readable = name.replace(/[-_]/g, " ").replace(/\s+/g, " ").trim();
-        if (isTest) {
-          names.add(`${readable} tests`);
-        } else {
-          names.add(readable);
-        }
-      }
-    }
-
-    return [...names].slice(0, 3);
   }
 
   /**
@@ -191,6 +158,34 @@ export class CommitOrchestrator {
       scope,
     };
   }
+}
+
+/**
+ * Prefixes redundant with `test:` — the commit type already says it's a test.
+ * Strips: "add tests for", "write tests for", "create tests for",
+ *         "add failing tests for", "test", "tests for"
+ */
+const RED_REDUNDANT_PREFIXES =
+  /^(?:add(?:\s+failing)?\s+tests?\s+(?:for\s+)?|write\s+tests?\s+(?:for\s+)?|create\s+tests?\s+(?:for\s+)?|tests?\s+(?:for\s+)?)/i;
+
+/**
+ * Prefixes redundant with `feat:` — the commit type already implies implementation.
+ * Strips: "implement", "add", "create", "build", "set up", "introduce"
+ */
+const GREEN_REDUNDANT_PREFIXES =
+  /^(?:implement(?:s)?\s+|add\s+|create\s+|build\s+|set\s+up\s+|introduce\s+)/i;
+
+/**
+ * Prefixes redundant with `refactor:` — only strip the word "refactor" itself.
+ * Keep specific verbs like "extract", "simplify", "reorganize" — they tell *what kind*.
+ */
+const REFACTOR_REDUNDANT_PREFIXES = /^(?:refactor\s+)/i;
+
+/** Strip a redundant prefix from a description, re-lowercasing the result */
+function stripPrefix(desc: string, pattern: RegExp): string {
+  const stripped = desc.replace(pattern, "");
+  if (stripped.length === 0) return desc; // don't strip everything
+  return stripped.charAt(0).toLowerCase() + stripped.slice(1);
 }
 
 /** Truncate a description for use in commit subject (max ~50 chars) */

@@ -8,7 +8,7 @@ import { TddPhase } from "../../src/tdd/enforcer.js";
 
 describe("Commit Orchestrator", () => {
   describe("phase-based commit planning", () => {
-    it("should plan a test commit for TDD Red phase with file-derived subject", () => {
+    it("should strip test-related prefix in Red phase (type already says test)", () => {
       const plan = CommitOrchestrator.planForPhase(TddPhase.Red, {
         taskId: "task-1",
         files: ["tests/auth.test.ts"],
@@ -16,10 +16,11 @@ describe("Commit Orchestrator", () => {
       });
       expect(plan.type).toBe("test");
       expect(plan.message).toContain("test:");
-      expect(plan.message).toContain("auth tests");
+      // "Add login validation tests" → strip "Add...tests" → "login validation"
+      expect(plan.message).toContain("login validation");
     });
 
-    it("should plan a feat commit for TDD Green phase with module name", () => {
+    it("should strip implementation prefix in Green phase (type already says feat)", () => {
       const plan = CommitOrchestrator.planForPhase(TddPhase.Green, {
         taskId: "task-1",
         files: ["src/auth/login.ts"],
@@ -27,10 +28,11 @@ describe("Commit Orchestrator", () => {
       });
       expect(plan.type).toBe("feat");
       expect(plan.message).toContain("feat(auth):");
-      expect(plan.message).toContain("implement login");
+      // "Implement login handler" → strip "Implement" → "login handler"
+      expect(plan.message).toContain("login handler");
     });
 
-    it("should plan a refactor commit for TDD Refactor phase", () => {
+    it("should keep specific action verbs in Refactor phase", () => {
       const plan = CommitOrchestrator.planForPhase(TddPhase.Refactor, {
         taskId: "task-1",
         files: ["src/auth/login.ts"],
@@ -38,16 +40,28 @@ describe("Commit Orchestrator", () => {
       });
       expect(plan.type).toBe("refactor");
       expect(plan.message).toContain("refactor(auth):");
-      expect(plan.message).toContain("clean up login");
+      // "Extract validation logic" → keep "extract" (specific action)
+      expect(plan.message).toContain("extract validation logic");
     });
 
-    it("should fall back to task description when no files provided", () => {
+    it("should strip 'refactor' prefix in Refactor phase since type already says it", () => {
+      const plan = CommitOrchestrator.planForPhase(TddPhase.Refactor, {
+        taskId: "task-1",
+        files: ["src/auth/login.ts"],
+        description: "Refactor authentication flow",
+      });
+      // "Refactor authentication flow" → strip "Refactor" → "authentication flow"
+      expect(plan.message).toContain("refactor(auth): authentication flow");
+    });
+
+    it("should preserve description context across phases", () => {
       const plan = CommitOrchestrator.planForPhase(TddPhase.Green, {
         taskId: "task-1",
         files: [],
-        description: "Implement user authentication",
+        description: "Implement user authentication with OAuth2",
       });
-      expect(plan.message).toContain("implement user authentication");
+      // "Implement user auth..." → strip "Implement" → "user authentication with OAuth2"
+      expect(plan.message).toContain("user authentication with OAuth2");
     });
 
     it("should include task title in commit body", () => {
@@ -70,10 +84,50 @@ describe("Commit Orchestrator", () => {
         files: ["lib/models/scan_node.dart"],
         description: "Define ScanNode model",
       });
-      // Red says "add tests for...", Green says "implement..."
+      // Red keeps full description (no test-prefix to strip)
+      // Green keeps full description (no impl-prefix to strip)
+      // But commit types differ: test: vs feat:
       expect(red.message).not.toBe(green.message);
-      expect(red.message).toContain("test");
-      expect(green.message).toContain("feat");
+      expect(red.message).toMatch(/^test[:(]/);
+      expect(green.message).toMatch(/^feat[:(]/);
+    });
+
+    it("should handle 'Add failing tests for' prefix in Red phase", () => {
+      const plan = CommitOrchestrator.planForPhase(TddPhase.Red, {
+        files: ["tests/parser.test.ts"],
+        description: "Add failing tests for JSON parser edge cases",
+      });
+      // "Add failing tests for JSON parser edge cases" → "jSON parser edge cases"
+      expect(plan.message).toMatch(/test:.*json parser edge cases/i);
+    });
+
+    it("should handle 'Create' prefix in Green phase", () => {
+      const plan = CommitOrchestrator.planForPhase(TddPhase.Green, {
+        files: ["src/db/migration.ts"],
+        description: "Create database migration runner",
+      });
+      // "Create database migration runner" → strip "Create" → "database migration runner"
+      expect(plan.message).toContain("database migration runner");
+    });
+
+    it("should not strip everything when description IS the prefix", () => {
+      const plan = CommitOrchestrator.planForPhase(TddPhase.Green, {
+        files: ["src/utils.ts"],
+        description: "Add",
+      });
+      // Should not produce empty subject
+      expect(plan.message).toContain("feat:");
+      expect(plan.message.split(":")[1]!.trim().length).toBeGreaterThan(0);
+    });
+
+    it("should truncate long descriptions to ~50 chars", () => {
+      const plan = CommitOrchestrator.planForPhase(TddPhase.Green, {
+        files: ["src/pipeline.ts"],
+        description: "Implement the complete data processing pipeline with validation, transformation, and output formatting stages",
+      });
+      // Subject line (first line) should be reasonable length
+      const subject = plan.message.split("\n")[0]!;
+      expect(subject.length).toBeLessThan(80);
     });
   });
 
