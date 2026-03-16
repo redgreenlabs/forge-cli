@@ -444,10 +444,11 @@ function GateFailureBanner({ report }: { report: PipelineResult }) {
 
 // ── Root Dashboard Component ───────────────────────────────────────
 
-function Dashboard({ state, startedAt }: { state: DashboardState; startedAt: number }) {
+function Dashboard({ state, startedAt, onQuit }: { state: DashboardState; startedAt: number; onQuit?: () => void }) {
   const { width: termWidth, height: termHeight } = useTerminalSize();
   const [tick, setTick] = useState(0);
   const [showOverlay, setShowOverlay] = useState(false);
+  const [confirmQuit, setConfirmQuit] = useState(false);
 
   useEffect(() => {
     const interval = setInterval(() => setTick((t) => t + 1), 1000);
@@ -455,7 +456,17 @@ function Dashboard({ state, startedAt }: { state: DashboardState; startedAt: num
   }, []);
 
   useInput((input) => {
+    if (confirmQuit) {
+      if (input === "y" || input === "Y") {
+        setConfirmQuit(false);
+        onQuit?.();
+      } else {
+        setConfirmQuit(false);
+      }
+      return;
+    }
     if (input === "d") setShowOverlay((prev) => !prev);
+    if (input === "q") setConfirmQuit(true);
   });
 
   // Calculate available height for main content
@@ -491,7 +502,15 @@ function Dashboard({ state, startedAt }: { state: DashboardState; startedAt: num
       )}
 
       {/* Footer */}
-      <FooterBar qualityReport={state.qualityReport} />
+      {confirmQuit ? (
+        <Box paddingX={1}>
+          <Text bold color="yellow">Quit FORGE? </Text>
+          <Text color="gray">[</Text><Text bold color="green">y</Text><Text color="gray">] yes  [</Text>
+          <Text bold color="red">n</Text><Text color="gray">] cancel</Text>
+        </Box>
+      ) : (
+        <FooterBar qualityReport={state.qualityReport} />
+      )}
     </Box>
   );
 }
@@ -511,10 +530,12 @@ export type DashboardUpdater = (state: DashboardState) => void;
  * - Press 'd' to toggle dashboard overlay (cost, coverage, security, gates)
  */
 export function startLiveDashboard(
-  initialState: DashboardState
+  initialState: DashboardState,
+  options?: { onQuit?: () => void }
 ): { updater: DashboardUpdater; cleanup: () => void } {
   let setExternalState: ((s: DashboardState) => void) | null = null;
   const startedAt = Date.now();
+  const onQuit = options?.onQuit;
 
   function LiveWrapper() {
     const [dashState, setDashState] = useState(initialState);
@@ -526,7 +547,7 @@ export function startLiveDashboard(
       };
     }, []);
 
-    return <Dashboard state={dashState} startedAt={startedAt} />;
+    return <Dashboard state={dashState} startedAt={startedAt} onQuit={onQuit} />;
   }
 
   // Enter alternate screen buffer

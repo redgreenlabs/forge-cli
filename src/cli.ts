@@ -390,6 +390,9 @@ program
     const { ClaudeCodeExecutor } = await import("./loop/executor.js");
     const executor = new ClaudeCodeExecutor("claude", !!options.verbose, cwd);
 
+    // Handle graceful shutdown
+    const controller = new AbortController();
+
     // Start live TUI dashboard if enabled
     let inkUpdater: ((state: import("./loop/orchestrator.js").DashboardState) => void) | null = null;
     let inkCleanup: (() => void) | null = null;
@@ -417,7 +420,9 @@ program
         commitCount: 0,
         claudeLogs: [],
       };
-      const dash = startLiveDashboard(initialDashState);
+      const dash = startLiveDashboard(initialDashState, {
+        onQuit: () => controller.abort(),
+      });
       inkUpdater = dash.updater;
       inkCleanup = dash.cleanup;
     }
@@ -443,8 +448,6 @@ program
       },
     });
 
-    // Handle graceful shutdown
-    const controller = new AbortController();
     const onSignal = () => {
       console.log(chalk.yellow("\n\nGraceful shutdown..."));
       controller.abort();
