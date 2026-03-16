@@ -26,6 +26,7 @@ function makeDashState(overrides: Partial<DashboardState> = {}): DashboardState 
     agentLog: [],
     handoffEntries: 0,
     commitCount: 4,
+    claudeLogs: [],
     ...overrides,
   };
 }

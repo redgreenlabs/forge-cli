@@ -402,6 +402,7 @@ program
         agentLog: [],
         handoffEntries: 0,
         commitCount: 0,
+        claudeLogs: [],
       };
       const dash = startLiveDashboard(initialDashState);
       inkUpdater = dash.updater;

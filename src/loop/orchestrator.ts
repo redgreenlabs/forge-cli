@@ -101,6 +101,8 @@ export interface DashboardState {
   security?: SecurityMetrics;
   /** Rate limit wait state (when pausing for API cooldown) */
   rateLimitWaiting?: { until: number; reason: string };
+  /** Raw Claude CLI output lines for live log pane */
+  claudeLogs: string[];
 }
 
 /**
@@ -142,6 +144,8 @@ export class LoopOrchestrator {
   private _rateLimitWaiting?: { until: number; reason: string };
   private _exitSignalCount = new Map<string, number>();
   private _taskFailureCounts = new Map<string, number>();
+  private _claudeLogs: string[] = [];
+  private static readonly MAX_CLAUDE_LOGS = 200;
 
   constructor(options: OrchestratorOptions) {
     this._config = options.config;
@@ -760,6 +764,15 @@ export class LoopOrchestrator {
     const THROTTLE_MS = 500;
 
     return (line: string) => {
+      // Always capture raw lines for the live log pane
+      const trimmed = line.trim();
+      if (trimmed.length > 0) {
+        this._claudeLogs.push(trimmed);
+        if (this._claudeLogs.length > LoopOrchestrator.MAX_CLAUDE_LOGS) {
+          this._claudeLogs.splice(0, this._claudeLogs.length - LoopOrchestrator.MAX_CLAUDE_LOGS);
+        }
+      }
+
       const now = Date.now();
       if (now - lastLogTime < THROTTLE_MS) return;
 
@@ -849,6 +862,7 @@ export class LoopOrchestrator {
       codeMetrics: this._codeMetrics,
       security: this._securityMetrics,
       rateLimitWaiting: this._rateLimitWaiting,
+      claudeLogs: this._claudeLogs,
     });
   }
 }

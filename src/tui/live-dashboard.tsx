@@ -10,17 +10,24 @@ import type { PipelineResult } from "../gates/quality-gates.js";
 import type { AgentLogEntry, CodeQualityMetrics, CoverageMetrics, SecurityMetrics } from "../tui/renderer.js";
 
 /** Hook to track terminal dimensions */
-function useTerminalHeight(): number {
+function useTerminalSize(): { width: number; height: number } {
   const { stdout } = useStdout();
-  const [height, setHeight] = useState(stdout?.rows ?? 24);
+  const [size, setSize] = useState({
+    width: stdout?.columns ?? 80,
+    height: stdout?.rows ?? 24,
+  });
 
   useEffect(() => {
-    const onResize = () => setHeight(stdout?.rows ?? 24);
+    const onResize = () =>
+      setSize({
+        width: stdout?.columns ?? 80,
+        height: stdout?.rows ?? 24,
+      });
     stdout?.on("resize", onResize);
     return () => { stdout?.off("resize", onResize); };
   }, [stdout]);
 
-  return height;
+  return size;
 }
 
 const PHASE_COLORS: Record<LoopPhase, string> = {
@@ -318,23 +325,73 @@ function RateLimitPanel({ waiting, now }: { waiting: { until: number; reason: st
   );
 }
 
+/** Colorize a Claude log line based on content */
+function LogLine({ line, maxWidth }: { line: string; maxWidth: number }) {
+  const truncated = line.length > maxWidth ? line.slice(0, maxWidth - 1) + "…" : line;
+
+  // Tool usage — highlight in cyan
+  if (/\b(?:Read|Write|Edit|Glob|Grep|Bash|NotebookEdit)\b/i.test(line)) {
+    return <Text color="cyan">{truncated}</Text>;
+  }
+  // Errors / failures
+  if (/\b(?:error|fail|FAIL|Error|panic)\b/i.test(line)) {
+    return <Text color="red">{truncated}</Text>;
+  }
+  // Test results
+  if (/\b(?:PASS|pass|✓|passed)\b/.test(line)) {
+    return <Text color="green">{truncated}</Text>;
+  }
+  // Cost / token info
+  if (/\b(?:cost|token|input_tokens|output_tokens)\b/i.test(line)) {
+    return <Text color="yellow">{truncated}</Text>;
+  }
+  return <Text color="gray">{truncated}</Text>;
+}
+
+/** Right-side panel: scrolling live Claude CLI output */
+function ClaudeLogPane({ logs, height, width }: { logs: string[]; height: number; width: number }) {
+  // Reserve 2 lines for header + border
+  const contentHeight = Math.max(1, height - 3);
+  const visible = logs.slice(-contentHeight);
+  const maxLineWidth = Math.max(10, width - 4); // padding
+
+  return (
+    <Box
+      flexDirection="column"
+      width={width}
+      height={height}
+      borderStyle="single"
+      borderColor="gray"
+      paddingX={1}
+    >
+      <Text bold color="gray">Claude Output</Text>
+      {visible.length === 0 ? (
+        <Text color="gray" dimColor>Waiting for Claude...</Text>
+      ) : (
+        visible.map((line, i) => (
+          <LogLine key={i} line={line} maxWidth={maxLineWidth} />
+        ))
+      )}
+    </Box>
+  );
+}
+
 /**
  * Live Ink-based TUI dashboard component.
  *
- * Renders a real-time updating terminal UI with:
- * - Loop iteration, phase, and elapsed time
- * - Current task name
- * - Progress bar with task counts
- * - TDD phase indicator with color
- * - Commit count and circuit breaker status
- * - Quality gate results
- * - Agent activity log (last 8 entries)
- * - Animated spinner while running
+ * Split-pane layout:
+ * - Left: Loop metrics, task, TDD phase, quality gates, agent activity
+ * - Right: Live Claude CLI output (stderr stream)
  */
 const WORK_INDICATORS = ["⠋", "⠙", "⠹", "⠸", "⠼", "⠴", "⠦", "⠧", "⠇", "⠏"];
 
+/** Minimum terminal width to show the split-pane layout */
+const MIN_SPLIT_WIDTH = 100;
+/** Fraction of terminal width for the log pane */
+const LOG_PANE_RATIO = 0.4;
+
 function Dashboard({ state, startedAt }: { state: DashboardState; startedAt: number }) {
-  const termHeight = useTerminalHeight();
+  const { width: termWidth, height: termHeight } = useTerminalSize();
   const [tick, setTick] = useState(0);
 
   // Single timer drives both elapsed clock and spinner — no extra re-renders
@@ -343,10 +400,10 @@ function Dashboard({ state, startedAt }: { state: DashboardState; startedAt: num
     return () => clearInterval(interval);
   }, []);
 
+  const showLogPane = termWidth >= MIN_SPLIT_WIDTH && (state.claudeLogs?.length ?? 0) > 0;
+  const logPaneWidth = showLogPane ? Math.floor(termWidth * LOG_PANE_RATIO) : 0;
+
   // Calculate how many agent log lines we can fit.
-  // Fixed lines: header border(3) + stats(2) + progress(1) + blank(1) + task(1)
-  //   + status row(1) + agent header(1) + separator(1) + spinner(1) = ~12
-  // Quality gates take variable lines.
   const gateLines = state.qualityReport ? state.qualityReport.results.length + 1 : 0;
   const coverageLines = state.coverage ? 4 : 0;
   const securityLines = state.security ? (state.security.critical + state.security.high + state.security.medium + state.security.low === 0 ? 2 : 2 + (state.security.critical > 0 ? 1 : 0) + (state.security.high > 0 ? 1 : 0) + (state.security.medium > 0 ? 1 : 0) + (state.security.low > 0 ? 1 : 0)) : 0;
@@ -356,8 +413,8 @@ function Dashboard({ state, startedAt }: { state: DashboardState; startedAt: num
   const availableForLog = Math.max(2, termHeight - fixedLines);
   const spinnerChar = WORK_INDICATORS[tick % WORK_INDICATORS.length];
 
-  return (
-    <Box flexDirection="column" paddingX={1}>
+  const leftPane = (
+    <Box flexDirection="column" paddingX={1} flexGrow={1}>
       <Header state={state.loop} startedAt={startedAt} now={Date.now()} />
       <CurrentTask name={state.currentTask} />
       <StatusRow
@@ -375,7 +432,7 @@ function Dashboard({ state, startedAt }: { state: DashboardState; startedAt: num
       <CodeMetricsPanel metrics={state.codeMetrics} />
       <AgentLog entries={state.agentLog} maxEntries={availableForLog} />
       <Box marginTop={1}>
-        <Text color="gray">{"─".repeat(50)}</Text>
+        <Text color="gray">{"─".repeat(Math.max(10, (showLogPane ? termWidth - logPaneWidth : termWidth) - 4))}</Text>
       </Box>
       {state.rateLimitWaiting ? (
         <Box>
@@ -392,6 +449,21 @@ function Dashboard({ state, startedAt }: { state: DashboardState; startedAt: num
           <Text color="gray">  Idle</Text>
         </Box>
       )}
+    </Box>
+  );
+
+  if (!showLogPane) {
+    return leftPane;
+  }
+
+  return (
+    <Box flexDirection="row" width={termWidth} height={termHeight}>
+      {leftPane}
+      <ClaudeLogPane
+        logs={state.claudeLogs ?? []}
+        height={termHeight}
+        width={logPaneWidth}
+      />
     </Box>
   );
 }
