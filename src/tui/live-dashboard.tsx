@@ -216,11 +216,13 @@ function LogLine({ line, maxWidth }: { line: string; maxWidth: number }) {
   return <Text color="gray">{truncated}</Text>;
 }
 
-function ClaudeOutputBox({ logs, height, width }: { logs: string[]; height: number; width: number }) {
-  // Account for border (2 lines) + header (1 line)
-  const contentHeight = Math.max(1, height - 3);
-  const visible = logs.slice(-contentHeight);
-  const maxW = Math.max(10, width - 6); // border + padding
+function ClaudeOutputBox({ logs }: { logs: string[] }) {
+  const { width: termWidth, height: termHeight } = useTerminalSize();
+  // Border (2) + header (1) = 3 lines of own chrome
+  const maxW = Math.max(10, termWidth - 6); // border + padding
+  // Show as many lines as terminal allows; flexGrow handles the actual box sizing
+  const maxLines = Math.max(1, termHeight - 3);
+  const visible = logs.slice(-maxLines);
 
   return (
     <Box
@@ -469,14 +471,6 @@ function Dashboard({ state, startedAt, onQuit }: { state: DashboardState; starte
     if (input === "q") setConfirmQuit(true);
   });
 
-  // Calculate available height for main content
-  // Title = 3 (border + text + border), Status = 6, Footer = 1, gate failures variable
-  const gateFailureLines = state.qualityReport && !state.qualityReport.passed
-    ? state.qualityReport.results.filter(r => r.status === GateStatus.Failed || r.status === GateStatus.Error).length + 2
-    : 0;
-  const chromeHeight = 3 + 6 + 1 + gateFailureLines;
-  const contentHeight = Math.max(5, termHeight - chromeHeight);
-
   return (
     <Box flexDirection="column" width={termWidth} height={termHeight}>
       {/* Title */}
@@ -494,11 +488,7 @@ function Dashboard({ state, startedAt, onQuit }: { state: DashboardState; starte
       {showOverlay ? (
         <DashboardOverlay state={state} />
       ) : (
-        <ClaudeOutputBox
-          logs={state.claudeLogs ?? []}
-          height={contentHeight}
-          width={termWidth}
-        />
+        <ClaudeOutputBox logs={state.claudeLogs ?? []} />
       )}
 
       {/* Footer */}
