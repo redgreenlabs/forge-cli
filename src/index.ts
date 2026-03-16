@@ -113,6 +113,17 @@ export {
   type TaskNode,
 } from "./prd/task-graph.js";
 
+// Task Decomposer
+export {
+  estimateTaskComplexity,
+  replaceTaskWithSubtasks,
+  parseDecomposeResponse,
+  decomposeTaskList,
+  type DecomposeConfig,
+  type DecomposeResult,
+  type DecomposeListResult,
+} from "./prd/decomposer.js";
+
 // Config Loader
 export {
   loadConfig,
@@ -135,6 +146,7 @@ export {
 
 export {
   importPrd,
+  importPrdWithDecompose,
   detectTechFromContent,
   type ImportResult,
 } from "./commands/import.js";

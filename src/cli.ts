@@ -512,13 +512,20 @@ program
   .command("import <file>")
   .description("Import a PRD from a file (Markdown, JSON, or text)")
   .option("--no-scan", "Skip codebase scan for existing implementations")
+  .option("--no-decompose", "Skip automatic decomposition of large tasks")
   .option("-v, --verbose", "Show detailed scan output")
-  .action(async (file: string, options: { scan?: boolean; verbose?: boolean }) => {
+  .action(async (file: string, options: { scan?: boolean; decompose?: boolean; verbose?: boolean }) => {
     const cwd = process.cwd();
     console.log(chalk.cyan(`Importing PRD from ${file}...`));
 
     let result;
-    if (options.scan !== false) {
+    if (options.decompose !== false) {
+      const { importPrdWithDecompose } = await import("./commands/import.js");
+      console.log(chalk.gray("  Decomposing complex tasks..."));
+      result = await importPrdWithDecompose(resolve(cwd, file), cwd, {
+        verbose: options.verbose,
+      });
+    } else if (options.scan !== false) {
       const { importPrdWithScan } = await import("./commands/import.js");
       console.log(chalk.gray("  Scanning codebase for existing implementations..."));
       result = await importPrdWithScan(resolve(cwd, file), cwd, {
@@ -543,6 +550,13 @@ program
       console.log(`  Medium:   ${priorities.medium}`);
     if (priorities.low > 0)
       console.log(chalk.gray(`  Low:      ${priorities.low}`));
+
+    // Show decomposition results
+    if (result.decomposedTasks && result.decomposedTasks > 0) {
+      console.log(
+        chalk.cyan(`\n  Decomposed ${result.decomposedTasks} large task(s) into ${result.subtasksCreated} subtasks.`)
+      );
+    }
 
     // Show scan results
     if (result.scanResults && result.scanResults.length > 0) {
@@ -809,6 +823,130 @@ program
 
     const format = (_options.format ?? "terminal") as "terminal" | "json" | "html";
     console.log(generateReport(data, format));
+  });
+
+program
+  .command("decompose")
+  .description("Decompose large PRD tasks into smaller TDD-friendly subtasks")
+  .option("--threshold <n>", "Complexity threshold (1-10)", (v) => parseInt(v, 10))
+  .option("--max-subtasks <n>", "Max subtasks per parent", (v) => parseInt(v, 10))
+  .option("--dry-run", "Show which tasks would be decomposed without calling Claude")
+  .option("-v, --verbose", "Show detailed output")
+  .action(async (options) => {
+    const cwd = process.cwd();
+    const forgeDir = resolve(cwd, ".forge");
+
+    if (!existsSync(forgeDir)) {
+      console.error(chalk.red("No .forge directory found. Run `forge init` first."));
+      process.exit(1);
+    }
+
+    const prdJsonPath = join(forgeDir, "prd.json");
+    if (!existsSync(prdJsonPath)) {
+      console.error(chalk.red("No prd.json found. Run `forge import <prd>` first."));
+      process.exit(1);
+    }
+
+    const { config } = loadConfig(cwd);
+    const threshold = (options.threshold as number | undefined) ?? config.decompose.complexityThreshold;
+    const maxSubtasks = (options.maxSubtasks as number | undefined) ?? config.decompose.maxSubtasks;
+
+    const prdData = JSON.parse(readFileSync(prdJsonPath, "utf-8"));
+    const { estimateTaskComplexity } = await import("./prd/decomposer.js");
+
+    console.log(chalk.bold.cyan("Task Complexity Analysis\n"));
+
+    let complexCount = 0;
+    for (const task of prdData.tasks) {
+      const score = estimateTaskComplexity(task);
+      const isComplex = score >= threshold;
+      if (isComplex) complexCount++;
+
+      const bar = "█".repeat(score) + "░".repeat(10 - score);
+      const color = isComplex ? chalk.red : chalk.green;
+      const label = isComplex ? chalk.red("DECOMPOSE") : chalk.green("OK");
+      console.log(`  ${color(bar)} ${score}/10  ${label}  ${task.id} ${chalk.gray(task.title.slice(0, 60))}`);
+    }
+
+    if (complexCount === 0) {
+      console.log(chalk.green("\nAll tasks are within complexity threshold. Nothing to decompose."));
+      return;
+    }
+
+    console.log(chalk.yellow(`\n${complexCount} task(s) above threshold (${threshold}).`));
+
+    if (options.dryRun) {
+      console.log(chalk.gray("\n[DRY RUN] No changes made."));
+      return;
+    }
+
+    console.log(chalk.cyan("\nDecomposing with Claude..."));
+
+    const { ClaudeCodeExecutor } = await import("./loop/executor.js");
+    const { decomposeTaskList } = await import("./prd/decomposer.js");
+
+    const executor = new ClaudeCodeExecutor("claude", !!options.verbose, cwd);
+    const result = await decomposeTaskList(prdData.tasks, executor, {
+      enabled: true,
+      maxSubtasks,
+      complexityThreshold: threshold,
+    });
+
+    if (result.decomposedCount === 0) {
+      console.log(chalk.yellow("No tasks were decomposed (Claude may not have produced valid output)."));
+      return;
+    }
+
+    // Write back
+    prdData.tasks = result.tasks.map((t: import("./prd/parser.js").PrdTask) => ({
+      id: t.id,
+      title: t.title,
+      status: t.status,
+      priority: t.priority,
+      category: t.category,
+      acceptanceCriteria: t.acceptanceCriteria,
+      dependsOn: t.dependsOn,
+    }));
+    writeFileSync(prdJsonPath, JSON.stringify(prdData, null, 2) + "\n");
+
+    // Regenerate tasks.md
+    const { parsePrd } = await import("./prd/parser.js");
+    const specsPath = join(forgeDir, "specs", "prd-original.md");
+    let prdTitle = prdData.title ?? "Tasks";
+    if (existsSync(specsPath)) {
+      try {
+        const original = parsePrd(readFileSync(specsPath, "utf-8"), "prd.md");
+        prdTitle = original.title;
+      } catch { /* use fallback */ }
+    }
+
+    // Build tasks.md from decomposed tasks
+    const lines: string[] = [`# ${prdTitle}`, ""];
+    const byPriority = new Map<string, typeof result.tasks>();
+    for (const task of result.tasks) {
+      const key = task.priority;
+      if (!byPriority.has(key)) byPriority.set(key, []);
+      byPriority.get(key)!.push(task);
+    }
+    for (const priority of ["critical", "high", "medium", "low"]) {
+      const tasks = byPriority.get(priority);
+      if (!tasks || tasks.length === 0) continue;
+      lines.push(`## Priority: ${priority.charAt(0).toUpperCase() + priority.slice(1)}`);
+      for (const task of tasks) {
+        const checkbox = task.status === "done" ? "[x]" : "[ ]";
+        const deps = task.dependsOn.length > 0 ? ` (depends: ${task.dependsOn.join(", ")})` : "";
+        lines.push(`- ${checkbox} [${task.id}] ${task.title}${deps}`);
+        for (const c of task.acceptanceCriteria) {
+          lines.push(`  - ${c}`);
+        }
+      }
+      lines.push("");
+    }
+    writeFileSync(join(forgeDir, "tasks.md"), lines.join("\n"));
+
+    console.log(chalk.green(`\nDecomposed ${result.decomposedCount} task(s) into ${result.subtasksCreated} subtasks.`));
+    console.log(`Total tasks: ${result.tasks.length}`);
+    console.log(`\nUpdated ${chalk.bold(".forge/prd.json")} and ${chalk.bold(".forge/tasks.md")}`);
   });
 
 program

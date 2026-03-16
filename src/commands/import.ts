@@ -9,6 +9,12 @@ import { join, basename, extname } from "path";
 import { parsePrd, TaskPriority, TaskStatus, type Prd } from "../prd/parser.js";
 import { FORGE_DIR, CONFIG_FILE } from "../config/loader.js";
 import { scanTasks, shouldMarkDone, type ScanResult } from "./scan.js";
+import {
+  decomposeTaskList,
+  type DecomposeConfig,
+} from "../prd/decomposer.js";
+import { ClaudeCodeExecutor } from "../loop/executor.js";
+import { loadConfig } from "../config/loader.js";
 
 export interface ImportResult {
   success: boolean;
@@ -19,6 +25,10 @@ export interface ImportResult {
   scanResults?: ScanResult[];
   /** Number of tasks pre-marked as done by scan */
   tasksPreMarkedDone?: number;
+  /** Number of parent tasks that were decomposed */
+  decomposedTasks?: number;
+  /** Total subtasks created from decomposition */
+  subtasksCreated?: number;
 }
 
 /**
@@ -332,6 +342,93 @@ export async function importPrdWithScan(
     ...result,
     scanResults: scanOutcome.results,
     tasksPreMarkedDone: markedCount,
+  };
+}
+
+/**
+ * Import a PRD with automatic decomposition of complex tasks.
+ *
+ * 1. Runs normal import (parse, write tasks.md, prd.json)
+ * 2. Loads tasks from prd.json
+ * 3. Decomposes tasks above complexity threshold using Claude
+ * 4. Rewrites prd.json and tasks.md with decomposed tasks
+ */
+export async function importPrdWithDecompose(
+  filePath: string,
+  projectRoot: string,
+  options?: { verbose?: boolean; timeout?: number }
+): Promise<ImportResult> {
+  // Step 1: Normal import
+  const result = importPrd(filePath, projectRoot);
+  if (!result.success) return result;
+
+  // Step 2: Load config for decompose settings
+  const { config } = loadConfig(projectRoot);
+  const decomposeConfig: DecomposeConfig = config.decompose;
+
+  if (!decomposeConfig.enabled) {
+    return result;
+  }
+
+  // Step 3: Load tasks and decompose
+  const forgeDir = join(projectRoot, FORGE_DIR);
+  const prdJsonPath = join(forgeDir, "prd.json");
+  const prdData = JSON.parse(readFileSync(prdJsonPath, "utf-8"));
+
+  const executor = new ClaudeCodeExecutor(
+    "claude",
+    options?.verbose ?? false,
+    projectRoot
+  );
+
+  const decomposeResult = await decomposeTaskList(
+    prdData.tasks,
+    executor,
+    decomposeConfig
+  );
+
+  if (decomposeResult.decomposedCount === 0) {
+    return result;
+  }
+
+  // Step 4: Rewrite files with decomposed tasks
+  prdData.tasks = decomposeResult.tasks.map((t: import("../prd/parser.js").PrdTask) => ({
+    id: t.id,
+    title: t.title,
+    status: t.status,
+    priority: t.priority,
+    category: t.category,
+    acceptanceCriteria: t.acceptanceCriteria,
+    dependsOn: t.dependsOn,
+  }));
+  writeFileSync(prdJsonPath, JSON.stringify(prdData, null, 2) + "\n");
+
+  // Regenerate tasks.md
+  const decomposedPrd: Prd = {
+    title: prdData.title,
+    description: prdData.description,
+    tasks: decomposeResult.tasks,
+    rawContent: "",
+  };
+  writeFileSync(join(forgeDir, "tasks.md"), generateTasksMarkdown(decomposedPrd));
+
+  // Recount priorities after decomposition
+  const priorities = { critical: 0, high: 0, medium: 0, low: 0 };
+  for (const task of decomposeResult.tasks) {
+    switch (task.priority) {
+      case TaskPriority.Critical: priorities.critical++; break;
+      case TaskPriority.High: priorities.high++; break;
+      case TaskPriority.Medium: priorities.medium++; break;
+      case TaskPriority.Low: priorities.low++; break;
+    }
+  }
+
+  return {
+    ...result,
+    tasksImported: decomposeResult.tasks.length,
+    priorities,
+    decomposedTasks: decomposeResult.decomposedCount,
+    subtasksCreated: decomposeResult.subtasksCreated,
   };
 }
 

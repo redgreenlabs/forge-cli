@@ -67,6 +67,13 @@ const CircuitBreakerConfigSchema = z.object({
   autoReset: z.boolean(),
 });
 
+/** Task decomposition configuration */
+const DecomposeConfigSchema = z.object({
+  enabled: z.boolean(),
+  maxSubtasks: z.number().int().min(2).max(15),
+  complexityThreshold: z.number().int().min(1).max(10),
+});
+
 /** Retry configuration for phase execution */
 const RetryConfigSchema = z.object({
   maxPhaseRetries: z.number().int().min(0).max(5),
@@ -162,6 +169,8 @@ export const ForgeConfigSchema = z.object({
   commands: CommandsConfigSchema,
   /** Retry settings for failed phases */
   retry: RetryConfigSchema,
+  /** Task decomposition settings */
+  decompose: DecomposeConfigSchema,
   /** Workspace definitions for multi-project repos */
   workspaces: z.array(WorkspaceConfigSchema).optional(),
 });
@@ -233,5 +242,10 @@ export const defaultConfig: ForgeConfig = {
   retry: {
     maxPhaseRetries: 1,
     retryDelayMs: 2000,
+  },
+  decompose: {
+    enabled: true,
+    maxSubtasks: 7,
+    complexityThreshold: 5,
   },
 };
