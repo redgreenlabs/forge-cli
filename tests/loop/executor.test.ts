@@ -812,5 +812,76 @@ EXIT_SIGNAL: false
       expect(result.status).toBe("success");
       expect(result.filesModified).toContain("committed-file.ts");
     });
+
+    it("should kill the child process when abort signal fires", async () => {
+      // Script that sleeps for 30 seconds
+      const scriptPath = join(tmpDir, "mock-slow.sh");
+      writeFileSync(scriptPath, "#!/bin/bash\nsleep 30\necho '{\"result\":\"done\"}'");
+      execSync(`chmod +x ${scriptPath}`, { stdio: "pipe" });
+
+      const controller = new AbortController();
+      const exec = new ClaudeCodeExecutor(scriptPath, false, tmpDir);
+
+      // Abort after 200ms
+      setTimeout(() => controller.abort(), 200);
+
+      const start = Date.now();
+      const result = await exec.execute({
+        prompt: "test",
+        systemPrompt: "",
+        allowedTools: [],
+        timeout: 30000,
+        signal: controller.signal,
+      });
+
+      const elapsed = Date.now() - start;
+      // Should finish well under 30s — the abort killed the process
+      expect(elapsed).toBeLessThan(5000);
+      expect(result.status).toBe("error");
+    });
+
+    it("should resolve immediately when signal is already aborted", async () => {
+      const scriptPath = join(tmpDir, "mock-slow2.sh");
+      writeFileSync(scriptPath, "#!/bin/bash\nsleep 30\necho '{\"result\":\"done\"}'");
+      execSync(`chmod +x ${scriptPath}`, { stdio: "pipe" });
+
+      const controller = new AbortController();
+      controller.abort(); // Already aborted
+
+      const exec = new ClaudeCodeExecutor(scriptPath, false, tmpDir);
+      const start = Date.now();
+      const result = await exec.execute({
+        prompt: "test",
+        systemPrompt: "",
+        allowedTools: [],
+        timeout: 30000,
+        signal: controller.signal,
+      });
+
+      const elapsed = Date.now() - start;
+      expect(elapsed).toBeLessThan(5000);
+      expect(result.status).toBe("error");
+    });
+
+    it("should clean up abort listener after process exits normally", async () => {
+      const scriptPath = join(tmpDir, "mock-fast.sh");
+      writeFileSync(scriptPath, '#!/bin/bash\necho \'{"result":"done"}\'');
+      execSync(`chmod +x ${scriptPath}`, { stdio: "pipe" });
+
+      const controller = new AbortController();
+      const exec = new ClaudeCodeExecutor(scriptPath, false, tmpDir);
+
+      const result = await exec.execute({
+        prompt: "test",
+        systemPrompt: "",
+        allowedTools: [],
+        timeout: 5000,
+        signal: controller.signal,
+      });
+
+      expect(result.status).toBe("success");
+      // Aborting after completion should not throw
+      controller.abort();
+    });
   });
 });
