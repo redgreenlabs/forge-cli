@@ -67,6 +67,8 @@ export interface ClaudeResponse {
   rawStderr?: string;
   /** Raw stdout output from Claude CLI (preserved for timeout diagnostics) */
   rawStdout?: string;
+  /** Claude session ID from stream events (for session continuity) */
+  sessionId?: string;
 }
 
 /** Options for creating a LoopOrchestrator */
@@ -432,6 +434,11 @@ export class LoopOrchestrator {
     // Accumulates files modified across all phases for security scan and commits
     const allFilesModified: string[] = [];
 
+    // Session ID captured from the red phase and reused for green/refactor.
+    // This keeps files read during the red phase in Claude's context window,
+    // avoiding redundant reads and saving tokens.
+    let taskSessionId: string | undefined;
+
     return {
       executeRedPhase: async (): Promise<PhaseResult> => {
         this.logAgent(AgentRole.Tester, "red-phase", "Writing failing test");
@@ -439,6 +446,7 @@ export class LoopOrchestrator {
           ? `${this._extraSystemContext}\n\n${getAgentPrompt(AgentRole.Tester)}`
           : getAgentPrompt(AgentRole.Tester);
         const { stderrHandler, streamHandler } = this.makeHandlers(AgentRole.Tester);
+        // Start a fresh session for each task (don't reuse cross-task sessions)
         const response = await this.executeWithSessionRotation({
           prompt: `[TDD RED PHASE] Write a failing test for:\n${taskContext}${handoffSection}\n\nWrite ONLY the test. Do NOT implement the feature yet.`,
           systemPrompt: testerPrompt,
@@ -447,6 +455,11 @@ export class LoopOrchestrator {
           onStderr: stderrHandler,
           onStreamEvent: streamHandler,
         }, getSessionId);
+
+        // Capture session ID for subsequent phases
+        if (response.sessionId) {
+          taskSessionId = response.sessionId;
+        }
 
         if (response.testResults) {
           this.tddEnforcer.recordTestRun(response.testResults);
@@ -471,6 +484,8 @@ export class LoopOrchestrator {
           ? `${this._extraSystemContext}\n\n${getAgentPrompt(AgentRole.Implementer)}`
           : getAgentPrompt(AgentRole.Implementer);
         const { stderrHandler: implStderr, streamHandler: implStream } = this.makeHandlers(AgentRole.Implementer);
+        // Continue the session from the red phase so Claude already has test files in context
+        const greenSessionId = taskSessionId ?? getSessionId();
         const response = await this.executeWithSessionRotation({
           prompt: `[TDD GREEN PHASE] Implement the MINIMAL code to make the failing test pass:\n${taskContext}${handoffSection}\n\nWrite only enough code to pass the test. Keep it simple.`,
           systemPrompt: implPrompt,
@@ -478,7 +493,12 @@ export class LoopOrchestrator {
           timeout,
           onStderr: implStderr,
           onStreamEvent: implStream,
-        }, getSessionId);
+        }, () => greenSessionId);
+
+        // Update session ID in case it was rotated
+        if (response.sessionId) {
+          taskSessionId = response.sessionId;
+        }
 
         if (response.testResults) {
           this.tddEnforcer.recordTestRun(response.testResults);
@@ -509,6 +529,8 @@ export class LoopOrchestrator {
           ? `${this._extraSystemContext}\n\n${getAgentPrompt(AgentRole.Implementer)}`
           : getAgentPrompt(AgentRole.Implementer);
         const { stderrHandler: refStderr, streamHandler: refStream } = this.makeHandlers(AgentRole.Implementer);
+        // Continue the session from green phase — test + impl files already in context
+        const refactorSessionId = taskSessionId ?? getSessionId();
         const response = await this.executeWithSessionRotation({
           prompt: `[TDD REFACTOR PHASE] Improve code quality without changing behavior:\n${taskContext}\n\nAll tests MUST still pass after refactoring.`,
           systemPrompt: refactorPrompt,
@@ -516,7 +538,7 @@ export class LoopOrchestrator {
           timeout,
           onStderr: refStderr,
           onStreamEvent: refStream,
-        }, getSessionId);
+        }, () => refactorSessionId);
 
         if (response.testResults) {
           const regression = this.tddEnforcer.checkTestRegression(response.testResults);

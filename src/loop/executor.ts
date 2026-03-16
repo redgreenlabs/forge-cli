@@ -288,6 +288,7 @@ function parseStreamEvents(events: StreamEvent[], raw: RawClaudeOutput): ClaudeR
     error: isError ? (resultText || "Claude execution error") : null,
     resultText: resultText || raw.stdout,
     rawStderr: raw.stderr || undefined,
+    sessionId: resultEvent?.session_id ?? events.find((e) => e.session_id)?.session_id,
   };
 }
 
