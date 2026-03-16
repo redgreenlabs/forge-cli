@@ -279,23 +279,44 @@ function ClaudeOutputBox({ logs }: { logs: string[] }) {
 
 function DashboardOverlay({ state }: { state: DashboardState }) {
   return (
-    <Box borderStyle="single" borderColor="cyan" flexDirection="column" flexGrow={1} paddingX={1}>
+    <Box borderStyle="single" borderColor="cyan" flexDirection="column" flexGrow={1} paddingX={2}>
       <Text bold color="cyan">Dashboard</Text>
+      <Text> </Text>
 
-      {/* Cost Breakdown */}
+      {/* Cost */}
       <CostPanel cost={state.cost} />
 
-      {/* Quality Gates Detail */}
-      {state.qualityReport && <GatesDetail report={state.qualityReport} />}
+      {/* Quality Gates */}
+      {state.qualityReport && (
+        <>
+          <Text> </Text>
+          <GatesDetail report={state.qualityReport} />
+        </>
+      )}
 
       {/* Coverage */}
-      {state.coverage && <CoveragePanel coverage={state.coverage} />}
+      {state.coverage && (
+        <>
+          <Text> </Text>
+          <CoveragePanel coverage={state.coverage} />
+        </>
+      )}
 
       {/* Security */}
-      {state.security && <SecurityPanel security={state.security} />}
+      {state.security && (
+        <>
+          <Text> </Text>
+          <SecurityPanel security={state.security} />
+        </>
+      )}
 
       {/* Code Metrics */}
-      {state.codeMetrics && <CodeMetricsPanel metrics={state.codeMetrics} />}
+      {state.codeMetrics && (
+        <>
+          <Text> </Text>
+          <CodeMetricsPanel metrics={state.codeMetrics} />
+        </>
+      )}
 
       <Box marginTop={1}>
         <Text color="gray">Press </Text><Text bold>d</Text><Text color="gray"> to close</Text>
@@ -306,26 +327,26 @@ function DashboardOverlay({ state }: { state: DashboardState }) {
 
 function CostPanel({ cost }: { cost?: CostMetrics }) {
   return (
-    <Box borderStyle="single" borderColor="yellow" flexDirection="column" paddingX={1} marginBottom={1}>
+    <Box flexDirection="column">
       <Text bold color="yellow">Cost</Text>
       {!cost ? (
-        <Text color="gray">No executions yet</Text>
+        <Text color="gray">  No executions yet</Text>
       ) : (
         <>
-          <Box gap={3}>
-            <Text><Text bold>Total:</Text> <Text color="yellow" bold>{formatCost(cost.totalUsd)}</Text></Text>
+          <Box gap={4}>
+            <Text>  <Text bold>Total:</Text> <Text color="yellow" bold>{formatCost(cost.totalUsd)}</Text></Text>
             <Text><Text bold>This task:</Text> <Text color="yellow">{formatCost(cost.currentTaskUsd)}</Text></Text>
             <Text><Text bold>Executions:</Text> {cost.executions}</Text>
           </Box>
-          <Box gap={3}>
-            <Text color="gray">Avg/execution: {formatCost(cost.executions > 0 ? cost.totalUsd / cost.executions : 0)}</Text>
+          <Box gap={4}>
+            <Text color="gray">  Avg/execution: {formatCost(cost.executions > 0 ? cost.totalUsd / cost.executions : 0)}</Text>
             {cost.completedTasks > 0 && (
               <Text color="gray">Avg/task: {formatCost(cost.totalUsd / cost.completedTasks)}</Text>
             )}
           </Box>
           {Object.keys(cost.perPhase).length > 0 && (
             <Box>
-              <Text color="gray">By phase: </Text>
+              <Text color="gray">  By phase: </Text>
               {Object.entries(cost.perPhase).map(([phase, usd], i) => (
                 <Text key={phase}>
                   {i > 0 && <Text color="gray"> | </Text>}
@@ -342,7 +363,7 @@ function CostPanel({ cost }: { cost?: CostMetrics }) {
 
 function GatesDetail({ report }: { report: PipelineResult }) {
   return (
-    <Box borderStyle="single" borderColor="gray" flexDirection="column" paddingX={1} marginBottom={1}>
+    <Box flexDirection="column">
       <Text bold>Quality Gates</Text>
       {report.results.map((gate) => {
         const icon = gate.status === GateStatus.Passed ? "✓"
@@ -353,7 +374,7 @@ function GatesDetail({ report }: { report: PipelineResult }) {
           : gate.status === GateStatus.Warning ? "yellow" : "gray";
         return (
           <Text key={gate.name}>
-            <Text color={color}>{icon}</Text> {gate.name.padEnd(20)} <Text color="gray">{gate.message} ({gate.durationMs}ms)</Text>
+            <Text color={color}>  {icon} {gate.name.padEnd(20)}</Text> <Text color="gray">{gate.message} ({gate.durationMs}ms)</Text>
           </Text>
         );
       })}
@@ -367,10 +388,10 @@ function CoveragePanel({ coverage }: { coverage: CoverageMetrics }) {
   const trendColor = coverage.trend === "up" ? "green" : coverage.trend === "down" ? "red" : "gray";
 
   return (
-    <Box borderStyle="single" borderColor="gray" flexDirection="column" paddingX={1} marginBottom={1}>
+    <Box flexDirection="column">
       <Text bold>Coverage</Text>
-      <Box gap={3}>
-        <Text>Lines: <Text color={colorFor(coverage.lines)}>{coverage.lines}%</Text> <Text color={trendColor}>{trendIcon}</Text></Text>
+      <Box gap={4}>
+        <Text>  Lines: <Text color={colorFor(coverage.lines)}>{coverage.lines}%</Text> <Text color={trendColor}>{trendIcon}</Text></Text>
         <Text>Branches: <Text color={colorFor(coverage.branches)}>{coverage.branches}%</Text></Text>
         <Text>Functions: <Text color={colorFor(coverage.functions)}>{coverage.functions}%</Text></Text>
       </Box>
@@ -381,13 +402,13 @@ function CoveragePanel({ coverage }: { coverage: CoverageMetrics }) {
 function SecurityPanel({ security }: { security: SecurityMetrics }) {
   const total = security.critical + security.high + security.medium + security.low;
   return (
-    <Box borderStyle="single" borderColor="gray" flexDirection="column" paddingX={1} marginBottom={1}>
+    <Box flexDirection="column">
       <Text bold>Security</Text>
       {total === 0 ? (
-        <Text color="green">✓ No findings</Text>
+        <Text color="green">  ✓ No findings</Text>
       ) : (
-        <Box gap={2}>
-          {security.critical > 0 && <Text color="red">{security.critical} CRITICAL</Text>}
+        <Box gap={3}>
+          {security.critical > 0 && <Text color="red">  {security.critical} CRITICAL</Text>}
           {security.high > 0 && <Text color="red">{security.high} HIGH</Text>}
           {security.medium > 0 && <Text color="yellow">{security.medium} MEDIUM</Text>}
           {security.low > 0 && <Text color="gray">{security.low} LOW</Text>}
@@ -402,10 +423,10 @@ function CodeMetricsPanel({ metrics }: { metrics: CodeQualityMetrics }) {
   const complexityColor = metrics.averageComplexity <= 5 ? "green" : metrics.averageComplexity <= 10 ? "yellow" : "red";
 
   return (
-    <Box borderStyle="single" borderColor="gray" flexDirection="column" paddingX={1} marginBottom={1}>
+    <Box flexDirection="column">
       <Text bold>Code Quality</Text>
-      <Box gap={3}>
-        <Text>Test ratio: <Text color={ratioColor}>{metrics.testRatio.toFixed(2)}</Text> <Text color="gray">({metrics.testFiles}/{metrics.sourceFiles})</Text></Text>
+      <Box gap={4}>
+        <Text>  Test ratio: <Text color={ratioColor}>{metrics.testRatio.toFixed(2)}</Text> <Text color="gray">({metrics.testFiles}/{metrics.sourceFiles})</Text></Text>
         <Text>Complexity: <Text color={complexityColor}>{metrics.averageComplexity.toFixed(1)} avg</Text></Text>
         {metrics.highComplexityCount > 0 && (
           <Text color="yellow">⚠ {metrics.highComplexityCount} high</Text>
