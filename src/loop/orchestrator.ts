@@ -290,6 +290,7 @@ export class LoopOrchestrator {
         autoCommit: this._config.tdd.commitPerPhase,
         maxPhaseRetries: this._config.retry.maxPhaseRetries,
         retryDelayMs: this._config.retry.retryDelayMs,
+        maxGateFixRetries: this._config.retry.maxPhaseRetries ?? 1,
       });
 
       const pipelineResult = await pipeline.execute(
@@ -613,6 +614,40 @@ export class LoopOrchestrator {
           }
         }
         return phaseImpl.runQualityGates(registry.toGateDefinitions());
+      },
+
+      fixQualityIssues: async (report: PipelineResult): Promise<PhaseResult> => {
+        const failedGates = report.results
+          .filter((r) => r.status === "failed" || r.status === "error")
+          .map((r) => `- ${r.name}: ${r.message}`)
+          .join("\n");
+        this.logAgent(AgentRole.Implementer, "fix-gates", `Fixing ${report.summary.failed + report.summary.errors} gate failures`);
+        const implPrompt = this._extraSystemContext
+          ? `${this._extraSystemContext}\n\n${getAgentPrompt(AgentRole.Implementer)}`
+          : getAgentPrompt(AgentRole.Implementer);
+        const { stderrHandler, streamHandler } = this.makeHandlers(AgentRole.Implementer);
+        const fixSessionId = taskSessionId ?? getSessionId();
+        const response = await this.executeWithSessionRotation({
+          prompt: `[FIX QUALITY GATES] The following quality gates failed after implementation:\n\n${failedGates}\n\nContext: ${taskContext}\n\nFix these issues. Run the failing commands to verify your fixes work. Do NOT skip or disable checks — fix the underlying code issues.`,
+          systemPrompt: implPrompt,
+          allowedTools: getAgentAllowedTools(AgentRole.Implementer, this._config.commands),
+          timeout,
+          onStderr: stderrHandler,
+          onStreamEvent: streamHandler,
+        }, () => fixSessionId);
+
+        if (response.sessionId) {
+          taskSessionId = response.sessionId;
+        }
+
+        allFilesModified.push(...response.filesModified);
+        return {
+          filesModified: response.filesModified,
+          testsPass: response.testsPass,
+          testResults: response.testResults,
+          error: response.error,
+          exitSignal: response.exitSignal,
+        };
       },
 
       executeCommit: async (_type: string, phase: TddPhase) => {

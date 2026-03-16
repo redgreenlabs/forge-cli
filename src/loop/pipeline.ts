@@ -32,6 +32,8 @@ export interface PhaseExecutor {
   runSecurityScan: () => Promise<SecurityScanResult>;
   runQualityGates: () => Promise<PipelineResult>;
   executeCommit: (type: string, phase: TddPhase) => Promise<CommitResult>;
+  /** Ask Claude to fix quality gate failures, returns the fix result */
+  fixQualityIssues?: (report: PipelineResult) => Promise<PhaseResult>;
 }
 
 /** Pipeline configuration */
@@ -44,6 +46,8 @@ export interface PipelineConfig {
   maxPhaseRetries?: number;
   /** Delay between retries in ms (default 1000) */
   retryDelayMs?: number;
+  /** Max retries to fix quality gate failures via Claude (default 1) */
+  maxGateFixRetries?: number;
 }
 
 /** Result of a full pipeline execution */
@@ -75,11 +79,13 @@ export class IterationPipeline {
   private config: PipelineConfig;
   private maxRetries: number;
   private retryDelayMs: number;
+  private maxGateFixRetries: number;
 
   constructor(config: PipelineConfig) {
     this.config = config;
     this.maxRetries = config.maxPhaseRetries ?? 0;
     this.retryDelayMs = config.retryDelayMs ?? 1000;
+    this.maxGateFixRetries = config.maxGateFixRetries ?? 1;
   }
 
   async execute(
@@ -171,13 +177,38 @@ export class IterationPipeline {
       securityPassed = scanResult.passed;
     }
 
-    // === QUALITY GATES ===
+    // === QUALITY GATES (with fix-retry loop) ===
     let gatesPassed = true;
     let qualityReport: PipelineResult | undefined;
     if (this.config.qualityGatesEnabled) {
       onPhaseChange(LoopPhase.QualityGate);
       qualityReport = await executor.runQualityGates();
       gatesPassed = qualityReport.passed;
+
+      // When gates fail and a fix executor is available, ask Claude to fix
+      // the issues and re-run the gates up to maxGateFixRetries times.
+      let fixAttempt = 0;
+      while (!gatesPassed && executor.fixQualityIssues && fixAttempt < this.maxGateFixRetries) {
+        fixAttempt++;
+        onPhaseChange(LoopPhase.Implementing);
+        const fixResult = await executor.fixQualityIssues(qualityReport!);
+
+        if (fixResult.error) break; // Claude couldn't attempt a fix
+
+        allFiles.push(...fixResult.filesModified);
+
+        // Commit the fix before re-checking gates
+        if (this.config.autoCommit) {
+          onPhaseChange(LoopPhase.Committing);
+          const commitResult = await executor.executeCommit("fix", TddPhase.Green);
+          if (commitResult.committed) commitsCreated++;
+        }
+
+        // Re-run quality gates
+        onPhaseChange(LoopPhase.QualityGate);
+        qualityReport = await executor.runQualityGates();
+        gatesPassed = qualityReport.passed;
+      }
     }
 
     if (!gatesPassed) {

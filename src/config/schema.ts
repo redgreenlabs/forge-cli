@@ -224,7 +224,7 @@ export const defaultConfig: ForgeConfig = {
     testsPass: QualityGateSeverity.Block,
     coverageThreshold: QualityGateSeverity.Block,
     securityScan: QualityGateSeverity.Block,
-    linting: QualityGateSeverity.Warn,
+    linting: QualityGateSeverity.Block,
     conventionalCommit: QualityGateSeverity.Block,
   },
   docs: {

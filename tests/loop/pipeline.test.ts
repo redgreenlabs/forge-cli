@@ -157,11 +157,87 @@ describe("Iteration Pipeline", () => {
         totalDurationMs: 100,
       });
 
-      const pipeline = createPipeline();
+      const pipeline = createPipeline({ maxGateFixRetries: 0 });
       const result = await pipeline.execute(executor, onPhaseChange);
 
       expect(result.completed).toBe(false);
       expect(result.gatesPassed).toBe(false);
+    });
+
+    it("should ask Claude to fix gate failures and re-run gates", async () => {
+      let gateCallCount = 0;
+      executor.runQualityGates = vi.fn().mockImplementation(async () => {
+        gateCallCount++;
+        if (gateCallCount === 1) {
+          return {
+            passed: false,
+            results: [{ name: "linting", status: "failed", message: "Linting issues found" }],
+            summary: { total: 1, passed: 0, failed: 1, warnings: 0, errors: 0 },
+            totalDurationMs: 50,
+          };
+        }
+        return {
+          passed: true,
+          results: [{ name: "linting", status: "passed", message: "No linting issues" }],
+          summary: { total: 1, passed: 1, failed: 0, warnings: 0, errors: 0 },
+          totalDurationMs: 50,
+        };
+      });
+      executor.fixQualityIssues = vi.fn().mockResolvedValue({
+        filesModified: ["src/auth.ts"],
+        testsPass: true,
+        testResults: { total: 1, passed: 1, failed: 0 },
+        error: null,
+      });
+
+      const pipeline = createPipeline({ maxGateFixRetries: 1 });
+      const result = await pipeline.execute(executor, onPhaseChange);
+
+      expect(result.completed).toBe(true);
+      expect(result.gatesPassed).toBe(true);
+      expect(executor.fixQualityIssues).toHaveBeenCalledTimes(1);
+      expect(executor.runQualityGates).toHaveBeenCalledTimes(2);
+    });
+
+    it("should fail after exhausting gate fix retries", async () => {
+      executor.runQualityGates = vi.fn().mockResolvedValue({
+        passed: false,
+        results: [{ name: "tests", status: "failed", message: "Tests failing" }],
+        summary: { total: 1, passed: 0, failed: 1, warnings: 0, errors: 0 },
+        totalDurationMs: 50,
+      });
+      executor.fixQualityIssues = vi.fn().mockResolvedValue({
+        filesModified: ["src/auth.ts"],
+        testsPass: false,
+        testResults: { total: 1, passed: 0, failed: 1 },
+        error: null,
+      });
+
+      const pipeline = createPipeline({ maxGateFixRetries: 2 });
+      const result = await pipeline.execute(executor, onPhaseChange);
+
+      expect(result.completed).toBe(false);
+      expect(result.gatesPassed).toBe(false);
+      expect(executor.fixQualityIssues).toHaveBeenCalledTimes(2);
+      // 1 initial + 2 retries = 3 gate checks
+      expect(executor.runQualityGates).toHaveBeenCalledTimes(3);
+    });
+
+    it("should not attempt fix when fixQualityIssues is not provided", async () => {
+      executor.runQualityGates = vi.fn().mockResolvedValue({
+        passed: false,
+        results: [{ name: "linting", status: "failed", message: "Linting issues" }],
+        summary: { total: 1, passed: 0, failed: 1, warnings: 0, errors: 0 },
+        totalDurationMs: 50,
+      });
+      // Don't set fixQualityIssues on executor
+
+      const pipeline = createPipeline({ maxGateFixRetries: 1 });
+      const result = await pipeline.execute(executor, onPhaseChange);
+
+      expect(result.completed).toBe(false);
+      expect(result.gatesPassed).toBe(false);
+      expect(executor.runQualityGates).toHaveBeenCalledTimes(1);
     });
   });
 
