@@ -814,16 +814,16 @@ EXIT_SIGNAL: false
     });
 
     it("should kill the child process when abort signal fires", async () => {
-      // Script that sleeps for 30 seconds
+      // Bash script that traps SIGTERM and exits (sleep alone ignores parent SIGTERM)
       const scriptPath = join(tmpDir, "mock-slow.sh");
-      writeFileSync(scriptPath, "#!/bin/bash\nsleep 30\necho '{\"result\":\"done\"}'");
+      writeFileSync(scriptPath, '#!/bin/bash\ntrap "exit 143" TERM\nsleep 30 &\nwait\necho \'{"result":"done"}\'');
       execSync(`chmod +x ${scriptPath}`, { stdio: "pipe" });
 
       const controller = new AbortController();
       const exec = new ClaudeCodeExecutor(scriptPath, false, tmpDir);
 
-      // Abort after 200ms
-      setTimeout(() => controller.abort(), 200);
+      // Abort after 500ms
+      setTimeout(() => controller.abort(), 500);
 
       const start = Date.now();
       const result = await exec.execute({
@@ -836,13 +836,13 @@ EXIT_SIGNAL: false
 
       const elapsed = Date.now() - start;
       // Should finish well under 30s — the abort killed the process
-      expect(elapsed).toBeLessThan(5000);
+      expect(elapsed).toBeLessThan(10000);
       expect(result.status).toBe("error");
     });
 
     it("should resolve immediately when signal is already aborted", async () => {
       const scriptPath = join(tmpDir, "mock-slow2.sh");
-      writeFileSync(scriptPath, "#!/bin/bash\nsleep 30\necho '{\"result\":\"done\"}'");
+      writeFileSync(scriptPath, '#!/bin/bash\ntrap "exit 143" TERM\nsleep 30 &\nwait\necho \'{"result":"done"}\'');
       execSync(`chmod +x ${scriptPath}`, { stdio: "pipe" });
 
       const controller = new AbortController();

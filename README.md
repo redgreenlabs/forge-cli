@@ -8,13 +8,17 @@ You describe what to build. Forge builds it — test-first, secure, and document
 
 - **TDD Enforcement** — Red-Green-Refactor cycle tracked and enforced. Tests are written before code, every time.
 - **Multi-Agent Teams** — 6 specialized roles (Architect, Implementer, Tester, Reviewer, Security, Documenter) with automatic task-to-agent matching
-- **Quality Gates** — 5-gate pipeline (tests, coverage, security, lint, commit) with blocking/warning severity
+- **Quality Gates with Auto-Fix** — 5-gate pipeline (tests, coverage, security, lint, commit) with blocking/warning severity. When gates fail, Claude automatically attempts to fix the issues before giving up.
 - **Security Scanning** — Secret detection, SAST, dependency audit on every iteration
 - **Conventional Commits** — Automatic commit per TDD phase (`test:`, `feat:`, `refactor:`)
-- **Live TUI Dashboard** — Real-time progress, agent activity, TDD phase, circuit breaker status
+- **Live TUI Dashboard** — Real-time Claude output, cost tracking, TDD pipeline visualization, quality gate status. Press `d` for detailed dashboard overlay, `q` for graceful quit.
+- **Cost Tracking** — Real-time cost per task, per execution, and per phase with averages
+- **Smart Task Ordering** — Tasks sorted by priority (critical → low) and dependency graph depth (foundational tasks first)
+- **Auto Task Decomposition** — Large complex tasks are automatically split into TDD-friendly subtasks
+- **Session Continuity** — Unified TDD prompt preserves Claude's context across Red/Green/Refactor phases. Resume loops across restarts with persistent state.
 - **Spec-Kit Integration** — Use [GitHub's spec-kit](https://github.com/github/spec-kit) for planning, Forge for execution
 - **Circuit Breaker** — Stagnation detection with auto-recovery (Nygard pattern)
-- **Session Continuity** — Resume loops across restarts with persistent state
+- **Stream Output** — Real-time structured JSON streaming from Claude CLI for live TUI feedback
 
 ## Quick Start
 
@@ -138,12 +142,39 @@ Select Task → TDD Red (write failing test)
             → TDD Green (implement to pass)
             → TDD Refactor (clean up)
             → Security Scan
-            → Quality Gates
-            → Conventional Commit
-            → Next Task
+            → Quality Gates ──→ Pass → Commit → Next Task
+                             └→ Fail → Auto-Fix → Re-run Gates (up to 3 retries)
 ```
 
-The loop stops when all tasks are complete, max iterations reached, or the circuit breaker trips (repeated failures).
+Tasks are selected by priority (critical first) and dependency graph depth (foundational tasks that unblock others run first). The loop stops when all tasks are complete, max iterations reached, or the circuit breaker trips (repeated failures).
+
+### TUI Dashboard
+
+The live dashboard shows real-time progress:
+
+```
+╭──────────────── FORGE Development Loop ─────────────────╮
+│                                                          │
+├──────────────────────────────────────────────────────────┤
+│ Phase: IMPLEMENTING   Tasks: 3/10   Iter: 5              │
+│ Elapsed: 04:32   Cost: $0.45   Commits: 8   Files: 3    │
+│                                                          │
+│ [████████████░░] 85%                                     │
+│ Task: Implement user authentication                      │
+│                                                          │
+│ ✓Red → ✓Green → ●Refactor → ○Gates (2 cycles)           │
+│ Gates: ✓tests ✓security ✓lint ✗coverage                  │
+├──────────────────────────────────────────────────────────┤
+│ Claude Output                                            │
+│ ⚡ Writing src/auth/login.ts...                           │
+│ Running npm test -- --reporter verbose                   │
+│ Tests  42 passed (42)                                    │
+├──────────────────────────────────────────────────────────┤
+│ [d] Dashboard  [q] Quit          ✓tests ✓sec ✓lint ✗cov │
+╰──────────────────────────────────────────────────────────╯
+```
+
+Press `d` to toggle the dashboard overlay with cost breakdown, coverage, security findings, and code quality metrics.
 
 ## Configuration
 
@@ -195,13 +226,15 @@ src/
 ├── commits/         # Conventional commit classification and planning
 ├── config/          # Zod-validated config with env var overrides
 ├── docs/            # Changelog and ADR generation
-├── gates/           # Quality gate pipeline with plugin registry
+├── gates/           # Quality gate pipeline with auto-fix retry
+├── logging/         # Pino structured logger with file transport
 ├── loop/            # Core engine, orchestrator, executor, circuit breaker
-├── prd/             # PRD parsing and task dependency graph (DAG)
+├── metrics/         # Code complexity and test ratio analysis
+├── prd/             # PRD parsing, task graph (DAG), auto-decomposition
 ├── security/        # Secret detection, SAST, dependency audit
 ├── speckit/         # Spec-kit format parser and context injection
 ├── tdd/             # Red-Green-Refactor enforcement
-├── tui/             # Ink live dashboard and static renderer
+├── tui/             # Ink live dashboard with cost tracking and overlays
 ├── cli.ts           # CLI entry point
 └── index.ts         # Public API
 ```

@@ -604,16 +604,24 @@ export class ClaudeCodeExecutor {
         stdio: ["ignore", "pipe", "pipe"],
         env,
         cwd: this.projectRoot,
+        detached: true,
       });
 
       // Kill child process on abort signal
       if (options.signal) {
+        const killProc = () => {
+          // Kill process group if possible, fall back to SIGKILL
+          try {
+            if (proc.pid) process.kill(-proc.pid, "SIGTERM");
+          } catch {
+            proc.kill("SIGKILL");
+          }
+        };
         if (options.signal.aborted) {
-          proc.kill("SIGTERM");
+          killProc();
         } else {
-          const onAbort = () => proc.kill("SIGTERM");
-          options.signal.addEventListener("abort", onAbort, { once: true });
-          proc.on("close", () => options.signal?.removeEventListener("abort", onAbort));
+          options.signal.addEventListener("abort", killProc, { once: true });
+          proc.on("close", () => options.signal?.removeEventListener("abort", killProc));
         }
       }
 
