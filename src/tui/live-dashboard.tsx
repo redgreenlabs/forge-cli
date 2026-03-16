@@ -442,8 +442,8 @@ function FooterBar({ qualityReport }: { qualityReport?: PipelineResult }) {
   return (
     <Box paddingX={1}>
       <Box flexGrow={1}>
-        <Text color="gray">[</Text><Text bold>d</Text><Text color="gray">] dashboard  [</Text>
-        <Text bold>q</Text><Text color="gray">] quit</Text>
+        <Text color="gray">[</Text><Text bold>d</Text><Text color="gray">] Dashboard  [</Text>
+        <Text bold>q</Text><Text color="gray">] Quit</Text>
       </Box>
       {qualityReport && <InlineGates results={qualityReport.results} />}
     </Box>

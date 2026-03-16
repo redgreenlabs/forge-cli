@@ -486,6 +486,7 @@ export class LoopOrchestrator {
 
         if (response.testResults) {
           this.tddEnforcer.recordTestRun(response.testResults);
+          this.emitDashboardUpdate(); // Refresh TDD phase in dashboard
           if (response.testResults.failed > 0) {
             this._testFailures = response.testResults.failed;
           }
@@ -522,6 +523,7 @@ export class LoopOrchestrator {
 
         if (response.testResults) {
           this.tddEnforcer.recordTestRun(response.testResults);
+          this.emitDashboardUpdate(); // Refresh TDD phase in dashboard
           if (response.testResults.failed > 0) {
             this._testFailures = response.testResults.failed;
           }
