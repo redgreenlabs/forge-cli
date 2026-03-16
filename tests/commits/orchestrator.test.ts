@@ -8,7 +8,7 @@ import { TddPhase } from "../../src/tdd/enforcer.js";
 
 describe("Commit Orchestrator", () => {
   describe("phase-based commit planning", () => {
-    it("should plan a test commit for TDD Red phase", () => {
+    it("should plan a test commit for TDD Red phase with file-derived subject", () => {
       const plan = CommitOrchestrator.planForPhase(TddPhase.Red, {
         taskId: "task-1",
         files: ["tests/auth.test.ts"],
@@ -16,10 +16,10 @@ describe("Commit Orchestrator", () => {
       });
       expect(plan.type).toBe("test");
       expect(plan.message).toContain("test:");
-      expect(plan.message).toContain("login validation");
+      expect(plan.message).toContain("auth tests");
     });
 
-    it("should plan a feat commit for TDD Green phase", () => {
+    it("should plan a feat commit for TDD Green phase with module name", () => {
       const plan = CommitOrchestrator.planForPhase(TddPhase.Green, {
         taskId: "task-1",
         files: ["src/auth/login.ts"],
@@ -27,6 +27,7 @@ describe("Commit Orchestrator", () => {
       });
       expect(plan.type).toBe("feat");
       expect(plan.message).toContain("feat(auth):");
+      expect(plan.message).toContain("implement login");
     });
 
     it("should plan a refactor commit for TDD Refactor phase", () => {
@@ -37,6 +38,42 @@ describe("Commit Orchestrator", () => {
       });
       expect(plan.type).toBe("refactor");
       expect(plan.message).toContain("refactor(auth):");
+      expect(plan.message).toContain("clean up login");
+    });
+
+    it("should fall back to task description when no files provided", () => {
+      const plan = CommitOrchestrator.planForPhase(TddPhase.Green, {
+        taskId: "task-1",
+        files: [],
+        description: "Implement user authentication",
+      });
+      expect(plan.message).toContain("implement user authentication");
+    });
+
+    it("should include task title in commit body", () => {
+      const plan = CommitOrchestrator.planForPhase(TddPhase.Green, {
+        taskId: "task-1",
+        files: ["src/models/scan_node.dart"],
+        description: "Define ScanNode tree model with recursive size",
+      });
+      expect(plan.message).toContain("Task: Define ScanNode tree model");
+    });
+
+    it("should produce different subjects for Red vs Green on same task", () => {
+      const red = CommitOrchestrator.planForPhase(TddPhase.Red, {
+        taskId: "task-1",
+        files: ["test/models/scan_node_test.dart"],
+        description: "Define ScanNode model",
+      });
+      const green = CommitOrchestrator.planForPhase(TddPhase.Green, {
+        taskId: "task-1",
+        files: ["lib/models/scan_node.dart"],
+        description: "Define ScanNode model",
+      });
+      // Red says "add tests for...", Green says "implement..."
+      expect(red.message).not.toBe(green.message);
+      expect(red.message).toContain("test");
+      expect(green.message).toContain("feat");
     });
   });
 

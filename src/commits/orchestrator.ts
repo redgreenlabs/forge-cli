@@ -49,12 +49,15 @@ export class CommitOrchestrator {
     const type = PHASE_TO_TYPE[phase];
     const scope = CommitOrchestrator.detectScope(input.files);
     const scopePart = scope ? `(${scope})` : "";
-    const descLower = input.description.charAt(0).toLowerCase() + input.description.slice(1);
 
-    let message = `${type}${scopePart}: ${descLower}`;
+    // Build a meaningful commit subject from files + phase, not just the task title
+    const subject = CommitOrchestrator.buildSubject(phase, input.files, input.description);
 
+    let message = `${type}${scopePart}: ${subject}`;
+
+    // Add task title as body context + task ref as footer
     if (input.taskId) {
-      message += `\n\nRefs: ${input.taskId}`;
+      message += `\n\nTask: ${input.description}\nRefs: ${input.taskId}`;
     }
 
     return {
@@ -63,6 +66,76 @@ export class CommitOrchestrator {
       files: input.files,
       scope,
     };
+  }
+
+  /**
+   * Build a concise commit subject from the TDD phase and changed files.
+   *
+   * Red phase: "add tests for <module>"
+   * Green phase: "implement <module>" or summarize from file names
+   * Refactor phase: "refactor <module>"
+   */
+  private static buildSubject(
+    phase: TddPhase,
+    files: string[],
+    taskDescription: string
+  ): string {
+    // Extract meaningful module/file names from changed files
+    const modules = CommitOrchestrator.extractModuleNames(files);
+    const moduleStr = modules.length > 0
+      ? modules.slice(0, 3).join(", ")
+      : null;
+
+    switch (phase) {
+      case TddPhase.Red:
+        return moduleStr
+          ? `add tests for ${moduleStr}`
+          : `add failing tests for ${truncateDesc(taskDescription)}`;
+      case TddPhase.Green:
+        return moduleStr
+          ? `implement ${moduleStr}`
+          : `implement ${truncateDesc(taskDescription)}`;
+      case TddPhase.Refactor:
+        return moduleStr
+          ? `clean up ${moduleStr}`
+          : `refactor ${truncateDesc(taskDescription)}`;
+    }
+  }
+
+  /**
+   * Extract human-readable module names from file paths.
+   *
+   * "src/models/scan_node.dart" → "ScanNode model"
+   * "test/widgets/sunburst_test.dart" → "sunburst widget"
+   * "lib/auth/login.ts" → "login"
+   */
+  private static extractModuleNames(files: string[]): string[] {
+    const names = new Set<string>();
+
+    for (const file of files) {
+      // Skip test files for Green/Refactor — they don't describe the implementation
+      const isTest = /\.(test|spec)\.[^/]+$/.test(file) || /test_/.test(file) || /_test\.[^/]+$/.test(file);
+
+      const basename = file.split("/").pop() ?? file;
+      // Remove extension and test suffix
+      const name = basename
+        .replace(/\.(ts|js|tsx|jsx|dart|py|rs|go|rb|java|kt|swift)$/, "")
+        .replace(/\.(test|spec)$/, "")
+        .replace(/_test$/, "")
+        .replace(/^test_/, "");
+
+      if (name && name.length > 1 && name !== "index" && name !== "mod" && name !== "main") {
+        // Convert snake_case/kebab-case to readable
+        const readable = name.replace(/[-_]/g, " ").replace(/\s+/g, " ").trim();
+        if (isTest) {
+          names.add(`${readable} tests`);
+        } else {
+          names.add(readable);
+        }
+      }
+    }
+
+    return [...names].slice(0, 3);
   }
 
   /**
@@ -118,6 +191,15 @@ export class CommitOrchestrator {
       scope,
     };
   }
+}
+
+/** Truncate a description for use in commit subject (max ~50 chars) */
+function truncateDesc(desc: string): string {
+  const lower = desc.charAt(0).toLowerCase() + desc.slice(1);
+  // Remove trailing period
+  const cleaned = lower.replace(/\.\s*$/, "");
+  if (cleaned.length <= 50) return cleaned;
+  return cleaned.slice(0, 47) + "...";
 }
 
 /** Extract logical scope from a file path */
