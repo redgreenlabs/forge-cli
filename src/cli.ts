@@ -315,6 +315,19 @@ program
     const { runPreflightChecks } = await import("./commands/preflight.js");
     const preflight = runPreflightChecks(effectiveConfig, cwd);
 
+    // Show warnings (non-blocking)
+    const warnings = preflight.checks.filter((c) => c.warning);
+    if (warnings.length > 0) {
+      console.log(chalk.yellow("\n  Preflight warnings:\n"));
+      for (const w of warnings) {
+        console.log(chalk.yellow(`  ⚠ ${w.message}`));
+        if (w.fix) {
+          console.log(chalk.gray(`    → ${w.fix}`));
+        }
+      }
+      console.log();
+    }
+
     if (!preflight.passed) {
       console.error(chalk.bold.red("\n  Preflight checks failed:\n"));
       for (const check of preflight.checks) {
@@ -328,7 +341,7 @@ program
           console.error();
         }
       }
-      const passed = preflight.checks.filter((c) => c.ok);
+      const passed = preflight.checks.filter((c) => c.ok && !c.warning);
       if (passed.length > 0) {
         console.log(chalk.gray(`  ✓ ${passed.length} checks passed`));
       }

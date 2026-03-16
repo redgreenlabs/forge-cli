@@ -59,11 +59,12 @@ describe("preflight checks", () => {
     expect(lintCheck?.message).toContain("fakeLinter");
   });
 
-  it("should check for package.json when using npm commands", () => {
+  it("should warn (not fail) when package.json is missing with npm commands", () => {
     // No package.json in tmpDir
     const result = runPreflightChecks(defaultConfig, tmpDir);
     const pkgCheck = result.checks.find((c) => c.name === "package.json");
-    expect(pkgCheck?.ok).toBe(false);
+    expect(pkgCheck?.warning).toBe(true);
+    expect(pkgCheck?.ok).toBe(true); // non-blocking
     expect(pkgCheck?.fix).toContain("npm init");
   });
 
@@ -74,7 +75,7 @@ describe("preflight checks", () => {
     expect(pkgCheck).toBeUndefined(); // no check added when file exists
   });
 
-  it("should check for pubspec.yaml when using flutter commands", () => {
+  it("should warn (not fail) when pubspec.yaml is missing with flutter commands", () => {
     const config: ForgeConfig = {
       ...defaultConfig,
       commands: {
@@ -87,11 +88,12 @@ describe("preflight checks", () => {
 
     const result = runPreflightChecks(config, tmpDir);
     const pubspecCheck = result.checks.find((c) => c.name === "pubspec.yaml");
-    expect(pubspecCheck?.ok).toBe(false);
+    expect(pubspecCheck?.warning).toBe(true);
+    expect(pubspecCheck?.ok).toBe(true);
     expect(pubspecCheck?.fix).toContain("flutter create");
   });
 
-  it("should check for Cargo.toml when using cargo commands", () => {
+  it("should warn (not fail) when Cargo.toml is missing with cargo commands", () => {
     const config: ForgeConfig = {
       ...defaultConfig,
       commands: {
@@ -104,11 +106,12 @@ describe("preflight checks", () => {
 
     const result = runPreflightChecks(config, tmpDir);
     const cargoCheck = result.checks.find((c) => c.name === "Cargo.toml");
-    expect(cargoCheck?.ok).toBe(false);
+    expect(cargoCheck?.warning).toBe(true);
+    expect(cargoCheck?.ok).toBe(true);
     expect(cargoCheck?.fix).toContain("cargo init");
   });
 
-  it("should check for go.mod when using go test", () => {
+  it("should warn (not fail) when go.mod is missing with go test", () => {
     const config: ForgeConfig = {
       ...defaultConfig,
       commands: {
@@ -121,7 +124,8 @@ describe("preflight checks", () => {
 
     const result = runPreflightChecks(config, tmpDir);
     const goModCheck = result.checks.find((c) => c.name === "go.mod");
-    expect(goModCheck?.ok).toBe(false);
+    expect(goModCheck?.warning).toBe(true);
+    expect(goModCheck?.ok).toBe(true);
     expect(goModCheck?.fix).toContain("go mod init");
   });
 

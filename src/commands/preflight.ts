@@ -10,6 +10,8 @@ export interface PreflightCheck {
   message: string;
   /** How to fix the issue (install instructions, config hint, etc.) */
   fix?: string;
+  /** When true, this is a non-blocking warning (e.g. missing project file that a scaffolding task will create) */
+  warning?: boolean;
 }
 
 /** Result of all preflight checks */
@@ -173,9 +175,41 @@ function checkCommand(
   };
 }
 
+/** Map of test command keywords to their expected project files */
+const PROJECT_FILE_CHECKS: {
+  keywords: string[];
+  file: string;
+  initCmd: string;
+}[] = [
+  {
+    keywords: ["npm", "npx", "yarn"],
+    file: "package.json",
+    initCmd: "npm init -y",
+  },
+  {
+    keywords: ["flutter"],
+    file: "pubspec.yaml",
+    initCmd: "flutter create .",
+  },
+  {
+    keywords: ["cargo"],
+    file: "Cargo.toml",
+    initCmd: "cargo init",
+  },
+  {
+    keywords: ["go test"],
+    file: "go.mod",
+    initCmd: "go mod init <module>",
+  },
+];
+
 /**
  * Check for project-specific files that should exist based on the
  * configured commands.
+ *
+ * These are **warnings**, not hard failures. A freshly imported PRD
+ * often includes a scaffolding task that will create these files
+ * during the first iteration.
  */
 function checkProjectFiles(
   config: ForgeConfig,
@@ -184,62 +218,18 @@ function checkProjectFiles(
   const checks: PreflightCheck[] = [];
   const testCmd = config.commands.test;
 
-  // Node projects need package.json
-  if (
-    testCmd.includes("npm") ||
-    testCmd.includes("npx") ||
-    testCmd.includes("yarn")
-  ) {
-    const hasPkg = existsSync(join(projectRoot, "package.json"));
-    if (!hasPkg) {
-      checks.push({
-        name: "package.json",
-        ok: false,
-        message:
-          "package.json not found but test command uses npm/npx",
-        fix: 'Run "npm init -y" or check that .forge/forge.config.json commands.test matches your project type.',
-      });
-    }
-  }
-
-  // Flutter projects need pubspec.yaml
-  if (testCmd.includes("flutter")) {
-    const hasPubspec = existsSync(join(projectRoot, "pubspec.yaml"));
-    if (!hasPubspec) {
-      checks.push({
-        name: "pubspec.yaml",
-        ok: false,
-        message:
-          "pubspec.yaml not found but test command uses flutter",
-        fix: 'Run "flutter create ." to initialize a Flutter project, or check commands.test in .forge/forge.config.json.',
-      });
-    }
-  }
-
-  // Rust projects need Cargo.toml
-  if (testCmd.includes("cargo")) {
-    const hasCargo = existsSync(join(projectRoot, "Cargo.toml"));
-    if (!hasCargo) {
-      checks.push({
-        name: "Cargo.toml",
-        ok: false,
-        message:
-          "Cargo.toml not found but test command uses cargo",
-        fix: 'Run "cargo init" to initialize a Rust project, or check commands.test in .forge/forge.config.json.',
-      });
-    }
-  }
-
-  // Go projects need go.mod
-  if (testCmd.includes("go test")) {
-    const hasGoMod = existsSync(join(projectRoot, "go.mod"));
-    if (!hasGoMod) {
-      checks.push({
-        name: "go.mod",
-        ok: false,
-        message: "go.mod not found but test command uses go",
-        fix: 'Run "go mod init <module>" to initialize a Go project, or check commands.test in .forge/forge.config.json.',
-      });
+  for (const { keywords, file, initCmd } of PROJECT_FILE_CHECKS) {
+    if (keywords.some((kw) => testCmd.includes(kw))) {
+      const exists = existsSync(join(projectRoot, file));
+      if (!exists) {
+        checks.push({
+          name: file,
+          ok: true, // non-blocking — scaffolding task will handle it
+          warning: true,
+          message: `${file} not found (expected by "${testCmd}")`,
+          fix: `Run "${initCmd}" first, or let the scaffolding task create it.`,
+        });
+      }
     }
   }
 
