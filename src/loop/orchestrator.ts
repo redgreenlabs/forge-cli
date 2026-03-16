@@ -18,7 +18,7 @@ import { TddEnforcer, TddPhase } from "../tdd/enforcer.js";
 import { TaskGraph, type TaskNode } from "../prd/task-graph.js";
 import type { PrdTask } from "../prd/parser.js";
 import type { PipelineResult } from "../gates/quality-gates.js";
-import type { AgentLogEntry, CodeQualityMetrics, CoverageMetrics, SecurityMetrics } from "../tui/renderer.js";
+import type { AgentLogEntry, CodeQualityMetrics, CoverageMetrics, SecurityMetrics, CostMetrics } from "../tui/renderer.js";
 import { HandoffContext, HandoffPriority } from "../agents/handoff.js";
 import { TeamComposer } from "../agents/team.js";
 import type { WarningPanelData } from "../tui/error-panel.js";
@@ -107,6 +107,8 @@ export interface DashboardState {
   rateLimitWaiting?: { until: number; reason: string };
   /** Raw Claude CLI output lines for live log pane */
   claudeLogs: string[];
+  /** Accumulated cost metrics */
+  cost?: CostMetrics;
 }
 
 /**
@@ -149,6 +151,10 @@ export class LoopOrchestrator {
   private _taskFailureCounts = new Map<string, number>();
   private _claudeLogs: string[] = [];
   private static readonly MAX_CLAUDE_LOGS = 200;
+  private _costTotal = 0;
+  private _costCurrentTask = 0;
+  private _costPerPhase: Record<string, number> = {};
+  private _apiCallCount = 0;
 
   constructor(options: OrchestratorOptions) {
     this._config = options.config;
@@ -269,6 +275,7 @@ export class LoopOrchestrator {
 
       // Select agent for the task
       this._currentTaskName = currentTask.title;
+      this._costCurrentTask = 0;
       this.emitDashboardUpdate();
       const agentRole = this.selectAgent(currentTask.title);
       this.logAgent(agentRole, "selected", `for: ${currentTask.title}`);
@@ -876,16 +883,25 @@ export class LoopOrchestrator {
         }
       }
 
-      // Result event — log cost
+      // Result event — log cost and accumulate totals
       if (event.type === "result" && event.total_cost_usd) {
-        const costLine = `✓ Done — $${event.total_cost_usd.toFixed(4)} (${event.duration_ms ?? 0}ms)`;
+        const cost = event.total_cost_usd;
+        const costLine = `✓ Done — $${cost.toFixed(4)} (${event.duration_ms ?? 0}ms)`;
         pushClaudeLog(costLine);
         lastLogTime = now;
+
+        // Accumulate cost metrics
+        this._costTotal += cost;
+        this._costCurrentTask += cost;
+        this._apiCallCount++;
+        const phase = this.engine.state.phase;
+        this._costPerPhase[phase] = (this._costPerPhase[phase] ?? 0) + cost;
+
         this._agentLog.push({
           timestamp: now,
           agent: "system",
           action: "cost",
-          detail: `$${event.total_cost_usd.toFixed(4)}`,
+          detail: `$${cost.toFixed(4)} (total: $${this._costTotal.toFixed(4)})`,
         });
         this.emitDashboardUpdate();
       }
@@ -929,6 +945,13 @@ export class LoopOrchestrator {
       security: this._securityMetrics,
       rateLimitWaiting: this._rateLimitWaiting,
       claudeLogs: this._claudeLogs,
+      cost: this._apiCallCount > 0 ? {
+        totalUsd: this._costTotal,
+        currentTaskUsd: this._costCurrentTask,
+        perPhase: { ...this._costPerPhase },
+        apiCalls: this._apiCallCount,
+        completedTasks: this.engine.state.tasksCompleted,
+      } : undefined,
     });
   }
 }

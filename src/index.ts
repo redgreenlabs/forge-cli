@@ -247,6 +247,7 @@ export {
   type SecurityMetrics,
   type CodeQualityMetrics,
   type AgentLogEntry,
+  type CostMetrics,
 } from "./tui/renderer.js";
 
 // Code Metrics

@@ -47,6 +47,20 @@ export interface AgentLogEntry {
   detail: string;
 }
 
+/** Accumulated cost metrics for display */
+export interface CostMetrics {
+  /** Total cost across all calls */
+  totalUsd: number;
+  /** Cost for the current task only */
+  currentTaskUsd: number;
+  /** Per-phase cost breakdown (phase name → USD) */
+  perPhase: Record<string, number>;
+  /** Total API calls made */
+  apiCalls: number;
+  /** Number of completed tasks (for avg calculation) */
+  completedTasks: number;
+}
+
 const PHASE_COLORS: Record<LoopPhase, (s: string) => string> = {
   [LoopPhase.Idle]: chalk.gray,
   [LoopPhase.Planning]: chalk.cyan,

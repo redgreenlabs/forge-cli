@@ -4,7 +4,7 @@ import { CircuitBreakerState } from "../../src/loop/circuit-breaker.js";
 import { TddPhase } from "../../src/tdd/enforcer.js";
 import type { DashboardState } from "../../src/loop/orchestrator.js";
 import { GateStatus } from "../../src/gates/quality-gates.js";
-import type { CoverageMetrics, SecurityMetrics } from "../../src/tui/renderer.js";
+import type { CoverageMetrics, SecurityMetrics, CostMetrics } from "../../src/tui/renderer.js";
 
 /** Helper to build a minimal DashboardState for tests */
 function makeDashState(overrides: Partial<DashboardState> = {}): DashboardState {
@@ -55,6 +55,7 @@ describe("DashboardState interface", () => {
     expect(state.security).toBeUndefined();
     expect(state.codeMetrics).toBeUndefined();
     expect(state.qualityReport).toBeUndefined();
+    expect(state.cost).toBeUndefined();
   });
 
   it("should accept coverage metrics", () => {
@@ -90,7 +91,8 @@ describe("DashboardState interface", () => {
           { name: "tests-pass", status: GateStatus.Passed, message: "All pass", durationMs: 100 },
           { name: "linting", status: GateStatus.Failed, message: "Issues found", durationMs: 50 },
         ],
-        summary: { total: 2, passed: 1, failed: 1, warnings: 0, errors: 0, durationMs: 150 },
+        summary: { total: 2, passed: 1, failed: 1, warnings: 0, errors: 0 },
+        totalDurationMs: 150,
       },
     });
     expect(state.qualityReport?.passed).toBe(false);
@@ -123,7 +125,46 @@ describe("DashboardState interface", () => {
     expect(state.codeMetrics?.highComplexityCount).toBe(2);
   });
 
-  it("should accept all fields together", () => {
+  it("should accept cost metrics", () => {
+    const cost: CostMetrics = {
+      totalUsd: 1.234,
+      currentTaskUsd: 0.456,
+      perPhase: { implementing: 0.8, testing: 0.3, quality_gate: 0.134 },
+      apiCalls: 12,
+      completedTasks: 3,
+    };
+    const state = makeDashState({ cost });
+    expect(state.cost).toEqual(cost);
+    expect(state.cost?.totalUsd).toBe(1.234);
+    expect(state.cost?.apiCalls).toBe(12);
+    expect(state.cost?.perPhase.implementing).toBe(0.8);
+  });
+
+  it("should compute average cost per task from cost metrics", () => {
+    const cost: CostMetrics = {
+      totalUsd: 3.0,
+      currentTaskUsd: 0.5,
+      perPhase: {},
+      apiCalls: 15,
+      completedTasks: 6,
+    };
+    const avgPerTask = cost.completedTasks > 0 ? cost.totalUsd / cost.completedTasks : 0;
+    expect(avgPerTask).toBe(0.5);
+  });
+
+  it("should compute average cost per call from cost metrics", () => {
+    const cost: CostMetrics = {
+      totalUsd: 2.0,
+      currentTaskUsd: 0.1,
+      perPhase: {},
+      apiCalls: 10,
+      completedTasks: 4,
+    };
+    const avgPerCall = cost.apiCalls > 0 ? cost.totalUsd / cost.apiCalls : 0;
+    expect(avgPerCall).toBe(0.2);
+  });
+
+  it("should accept all fields together including cost", () => {
     const state = makeDashState({
       currentTask: "Implement login form",
       coverage: { lines: 82, branches: 70, functions: 88, trend: "stable" },
@@ -140,12 +181,21 @@ describe("DashboardState interface", () => {
         results: [
           { name: "tests-pass", status: GateStatus.Passed, message: "OK", durationMs: 200 },
         ],
-        summary: { total: 1, passed: 1, failed: 0, warnings: 0, errors: 0, durationMs: 200 },
+        summary: { total: 1, passed: 1, failed: 0, warnings: 0, errors: 0 },
+        totalDurationMs: 200,
+      },
+      cost: {
+        totalUsd: 0.567,
+        currentTaskUsd: 0.123,
+        perPhase: { implementing: 0.4, testing: 0.167 },
+        apiCalls: 5,
+        completedTasks: 2,
       },
     });
     expect(state.currentTask).toBe("Implement login form");
     expect(state.coverage?.lines).toBe(82);
     expect(state.security?.medium).toBe(1);
     expect(state.codeMetrics?.averageComplexity).toBe(6.2);
+    expect(state.cost?.totalUsd).toBe(0.567);
   });
 });
