@@ -350,9 +350,9 @@
       background: var(--surface);
       border: 1px solid var(--border);
       border-radius: 10px;
-      padding: 16px 20px;
+      padding: 14px 16px;
       text-align: center;
-      min-width: 120px;
+      min-width: 100px;
     }
 
     .pipeline-step .step-icon { font-size: 24px; margin-bottom: 6px; }
@@ -584,7 +584,7 @@
         </svg>
       </div>
 
-      <div class="hero-badge">AI-Powered Software Craftsmanship</div>
+      <div class="hero-badge">v0.5 &mdash; AI-Powered Software Craftsmanship</div>
       <h1>Build software<br><span>the right way</span></h1>
       <p class="hero-sub">
         Forge is an autonomous development orchestrator that practices the craft: tests first, security always, every commit meaningful. It doesn't just write code &mdash; it builds software the way a disciplined team would.
@@ -603,12 +603,14 @@
         </div>
         <div><span class="prompt">$</span> <span class="cmd">forge init --name my-api</span></div>
         <div><span class="prompt">$</span> <span class="cmd">forge import requirements.md</span></div>
-        <div class="output">  Imported 8 tasks from PRD (3 critical, 5 high)</div>
+        <div class="output">  Imported 12 tasks from PRD (3 critical, 5 high, 4 medium)</div>
         <div><span class="prompt">$</span> <span class="cmd">forge run</span></div>
-        <div class="output">  FORGE Development Loop</div>
-        <div class="output">  Iteration: 01  Phase: TESTING  Elapsed: 02:14</div>
-        <div class="output">  Progress: [████████░░░░░░░░░░░░] 40%  (3/8)</div>
-        <div class="output">  TDD: ● RED   Commits: 6   Circuit: CLOSED</div>
+        <div class="output">  ╭──── FORGE  Development Loop ────╮</div>
+        <div class="output">  Phase: <span style="color: var(--accent)">IMPLEMENTING</span>  Tasks: <span style="color: var(--accent)">5</span>/12  Iter: 7</div>
+        <div class="output">  Elapsed: 14:32  Cost: <span style="color: var(--yellow)">$1.24</span>  Commits: 15</div>
+        <div class="output">  [<span style="color: var(--accent)">██████░░░░░░░░</span>] 42%</div>
+        <div class="output">  Task: Implement JWT auth middleware</div>
+        <div class="output">  <span style="color: var(--accent)">✓RED</span> → <span style="color: var(--accent)">●GREEN</span> → <span style="color: var(--text-muted)">○REFACTOR</span> → <span style="color: var(--text-muted)">○Gates</span></div>
       </div>
     </div>
   </section>
@@ -689,8 +691,8 @@
         </div>
         <div class="feature-card">
           <div class="feature-icon">&#x2705;</div>
-          <h3>Quality Gates</h3>
-          <p>5-gate pipeline: tests, coverage, security, lint, and commit validation. Configurable blocking vs warning severity.</p>
+          <h3>Quality Gates + Auto-Fix</h3>
+          <p>5-gate pipeline: tests, coverage, security, lint, and commit validation. When gates fail, Claude automatically fixes the issues and re-runs.</p>
         </div>
         <div class="feature-card">
           <div class="feature-icon">&#x1F4DD;</div>
@@ -705,12 +707,27 @@
         <div class="feature-card">
           <div class="feature-icon">&#x1F4CA;</div>
           <h3>Live Dashboard</h3>
-          <p>Real-time Ink TUI showing iteration progress, TDD phase, agent activity, quality gate results, and elapsed time.</p>
+          <p>Real-time Ink TUI with cost tracking, TDD phase pipeline, progress bar, Claude stream output, and toggleable detail overlay. Press <code>d</code> for deep metrics, <code>q</code> to quit safely.</p>
+        </div>
+        <div class="feature-card">
+          <div class="feature-icon">&#x1F4B0;</div>
+          <h3>Cost Tracking</h3>
+          <p>Real-time API cost monitoring &mdash; total spend, per-task cost, per-phase breakdown, and average cost per call. Stay in control of your token budget.</p>
+        </div>
+        <div class="feature-card">
+          <div class="feature-icon">&#x1F9E0;</div>
+          <h3>Smart Task Ordering</h3>
+          <p>Tasks are sorted by priority and dependency depth. Foundational tasks with the most dependents are built first &mdash; not random order.</p>
+        </div>
+        <div class="feature-card">
+          <div class="feature-icon">&#x23F3;</div>
+          <h3>Rate Limit Resilience</h3>
+          <p>Hits a rate limit? Forge shows a countdown modal, waits for the exact reset time, and resumes automatically. No task failures, no wasted retries.</p>
         </div>
         <div class="feature-card">
           <div class="feature-icon">&#x1F504;</div>
           <h3>Session Continuity</h3>
-          <p>Resume interrupted runs. Task completion persists to disk. Pick up exactly where you left off.</p>
+          <p>Resume interrupted runs. Task completion persists to disk. Context-exhausted sessions rotate automatically. Pick up where you left off.</p>
         </div>
         <div class="feature-card">
           <div class="feature-icon">&#x1F4D0;</div>
@@ -732,7 +749,7 @@
         <div class="pipeline-step">
           <div class="step-icon">&#x1F3AF;</div>
           <div class="step-label">Select Task</div>
-          <div class="step-detail">from dependency graph</div>
+          <div class="step-detail">priority + dependency sort</div>
         </div>
         <div class="pipeline-arrow">&rarr;</div>
         <div class="pipeline-step" style="border-color: var(--red);">
@@ -741,16 +758,22 @@
           <div class="step-detail">write failing test</div>
         </div>
         <div class="pipeline-arrow">&rarr;</div>
+        <div class="pipeline-step">
+          <div class="step-icon">&#x1F4BE;</div>
+          <div class="step-label">Commit</div>
+          <div class="step-detail">test:</div>
+        </div>
+        <div class="pipeline-arrow">&rarr;</div>
         <div class="pipeline-step" style="border-color: var(--accent);">
           <div class="step-icon">&#x1F7E2;</div>
           <div class="step-label">Green</div>
           <div class="step-detail">implement to pass</div>
         </div>
         <div class="pipeline-arrow">&rarr;</div>
-        <div class="pipeline-step" style="border-color: var(--yellow);">
-          <div class="step-icon">&#x1F7E1;</div>
-          <div class="step-label">Refactor</div>
-          <div class="step-detail">clean up</div>
+        <div class="pipeline-step">
+          <div class="step-icon">&#x1F4BE;</div>
+          <div class="step-label">Commit</div>
+          <div class="step-detail">feat:</div>
         </div>
         <div class="pipeline-arrow">&rarr;</div>
         <div class="pipeline-step">
@@ -762,13 +785,19 @@
         <div class="pipeline-step">
           <div class="step-icon">&#x2705;</div>
           <div class="step-label">Gates</div>
-          <div class="step-detail">quality checks</div>
+          <div class="step-detail">auto-fix on fail</div>
+        </div>
+        <div class="pipeline-arrow">&rarr;</div>
+        <div class="pipeline-step" style="border-color: var(--yellow);">
+          <div class="step-icon">&#x1F7E1;</div>
+          <div class="step-label">Refactor</div>
+          <div class="step-detail">clean up</div>
         </div>
         <div class="pipeline-arrow">&rarr;</div>
         <div class="pipeline-step">
           <div class="step-icon">&#x1F4BE;</div>
           <div class="step-label">Commit</div>
-          <div class="step-detail">conventional format</div>
+          <div class="step-detail">refactor:</div>
         </div>
       </div>
     </div>
