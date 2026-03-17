@@ -174,4 +174,40 @@ describe("Orchestrator Integration", () => {
       expect(orch.errorPanelData.testFailures).toBe(3);
     });
   });
+
+  describe("rate limit handling", () => {
+    it("should retry executor call when rate-limited with expired resetsAt", async () => {
+      let callCount = 0;
+      const rateLimitExecutor: ClaudeExecutor = {
+        execute: vi.fn().mockImplementation(async () => {
+          callCount++;
+          if (callCount === 1) {
+            return makeClaudeResponse({
+              status: "error",
+              exitSignal: false,
+              filesModified: [],
+              testsPass: false,
+              testResults: { total: 0, passed: 0, failed: 0 },
+              error: "API rate limit reached (rate_limit_event detected)",
+              rateLimited: true,
+              rateLimitResetsAt: Math.floor(Date.now() / 1000) - 1, // Already expired — instant retry
+            });
+          }
+          return makeClaudeResponse();
+        }),
+      };
+
+      const orch = createOrchestrator({
+        executor: rateLimitExecutor,
+        config: { ...defaultConfig, maxIterations: 3, exitSignalThreshold: 1, rateLimitWaitMinutes: 0 },
+      });
+
+      await orch.runIteration();
+
+      // The rate-limited call should have been retried automatically
+      expect(callCount).toBeGreaterThan(1);
+      // Circuit breaker should not have tripped from the rate limit
+      expect(orch.errorPanelData.circuitBreakerState).toBe("CLOSED");
+    });
+  });
 });

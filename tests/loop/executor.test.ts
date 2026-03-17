@@ -327,6 +327,39 @@ EXIT_SIGNAL: false
       expect(result.error).toContain("rate limit");
     });
 
+    it("should extract rateLimitResetsAt from rate_limit_info in items", () => {
+      const resetsAt = Math.floor(Date.now() / 1000) + 3600;
+      const raw: RawClaudeOutput = {
+        stdout: JSON.stringify([
+          {
+            type: "rate_limit_event",
+            content: "Rate limited",
+            rate_limit_info: { resetsAt },
+          },
+        ]),
+        stderr: "",
+        exitCode: 0,
+      };
+
+      const result = parseClaudeResponse(raw);
+      expect(result.rateLimited).toBe(true);
+      expect(result.rateLimitResetsAt).toBe(resetsAt);
+    });
+
+    it("should handle rate_limit_event without rate_limit_info gracefully", () => {
+      const raw: RawClaudeOutput = {
+        stdout: JSON.stringify([
+          { type: "rate_limit_event", content: "Rate limited" },
+        ]),
+        stderr: "",
+        exitCode: 0,
+      };
+
+      const result = parseClaudeResponse(raw);
+      expect(result.rateLimited).toBe(true);
+      expect(result.rateLimitResetsAt).toBeUndefined();
+    });
+
     it("should include rawStderr and rawStdout on timeout errors", () => {
       const raw: RawClaudeOutput = {
         stdout: '{"partial": "output from claude"}',

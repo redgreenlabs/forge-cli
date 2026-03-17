@@ -415,4 +415,59 @@ describe("Iteration Pipeline", () => {
       expect(callCount).toBe(2);
     });
   });
+
+  describe("rate limit detection", () => {
+    it("should set rateLimited flag when Green phase error contains 'rate limit'", async () => {
+      executor.executeGreenPhase = vi.fn().mockResolvedValue({
+        filesModified: [],
+        testsPass: false,
+        testResults: { total: 0, passed: 0, failed: 0 },
+        error: "API rate limit reached (rate_limit_event detected)",
+      });
+
+      const pipeline = createPipeline({ tddEnabled: false });
+      const result = await pipeline.execute(executor, onPhaseChange);
+
+      expect(result.completed).toBe(false);
+      expect(result.rateLimited).toBe(true);
+    });
+
+    it("should set rateLimited flag when error contains 'rate_limit'", async () => {
+      executor.executeGreenPhase = vi.fn().mockResolvedValue({
+        filesModified: [],
+        testsPass: false,
+        testResults: { total: 0, passed: 0, failed: 0 },
+        error: "rate_limit_event rejected",
+      });
+
+      const pipeline = createPipeline({ tddEnabled: false });
+      const result = await pipeline.execute(executor, onPhaseChange);
+
+      expect(result.completed).toBe(false);
+      expect(result.rateLimited).toBe(true);
+    });
+
+    it("should not set rateLimited for non-rate-limit errors", async () => {
+      executor.executeGreenPhase = vi.fn().mockResolvedValue({
+        filesModified: [],
+        testsPass: false,
+        testResults: { total: 0, passed: 0, failed: 0 },
+        error: "Connection timeout",
+      });
+
+      const pipeline = createPipeline({ tddEnabled: false });
+      const result = await pipeline.execute(executor, onPhaseChange);
+
+      expect(result.completed).toBe(false);
+      expect(result.rateLimited).toBeFalsy();
+    });
+
+    it("should not set rateLimited when pipeline completes successfully", async () => {
+      const pipeline = createPipeline({ tddEnabled: false });
+      const result = await pipeline.execute(executor, onPhaseChange);
+
+      expect(result.completed).toBe(true);
+      expect(result.rateLimited).toBeUndefined();
+    });
+  });
 });
