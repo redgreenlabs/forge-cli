@@ -1,6 +1,6 @@
 {
   "name": "@redgreen-labs/forge-cli",
-  "version": "0.5.1",
+  "version": "0.5.2",
   "description": "Autonomous multi-agent development orchestrator with TDD, security, and craftsmanship",
   "type": "module",
   "bin": {
