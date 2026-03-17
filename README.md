@@ -26,7 +26,8 @@ You describe what to build. Forge builds it — test-first, secure, and document
 # Install
 npm install -g @redgreen-labs/forge-cli
 
-# Initialize a project (auto-detects language and commands)
+# Run inside your existing project directory
+cd my-project
 forge init
 
 # Import requirements
