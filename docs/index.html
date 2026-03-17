@@ -499,6 +499,168 @@
       text-decoration: none;
     }
 
+    /* Docs */
+    .docs {
+      padding: 100px 0;
+    }
+
+    .docs-grid {
+      display: grid;
+      grid-template-columns: 200px 1fr;
+      gap: 48px;
+      margin-top: 48px;
+    }
+
+    @media (max-width: 768px) {
+      .docs-grid { grid-template-columns: 1fr; }
+    }
+
+    .docs-nav {
+      position: sticky;
+      top: 24px;
+      align-self: start;
+      list-style: none;
+      display: flex;
+      flex-direction: column;
+      gap: 4px;
+    }
+
+    .docs-nav a {
+      color: var(--text-muted);
+      text-decoration: none;
+      font-size: 14px;
+      padding: 6px 12px;
+      border-radius: 6px;
+      transition: all 0.2s;
+      display: block;
+    }
+
+    .docs-nav a:hover { color: var(--text); background: var(--surface); }
+
+    .docs-content section {
+      margin-bottom: 64px;
+    }
+
+    .docs-content h3 {
+      font-size: 24px;
+      font-weight: 700;
+      letter-spacing: -0.5px;
+      margin-bottom: 16px;
+      padding-bottom: 8px;
+      border-bottom: 1px solid var(--border);
+    }
+
+    .docs-content h4 {
+      font-size: 16px;
+      font-weight: 700;
+      margin-top: 28px;
+      margin-bottom: 8px;
+    }
+
+    .docs-content p {
+      color: var(--text-muted);
+      font-size: 15px;
+      margin-bottom: 16px;
+      line-height: 1.7;
+    }
+
+    .docs-content code {
+      background: var(--surface);
+      border: 1px solid var(--border);
+      border-radius: 4px;
+      padding: 2px 6px;
+      font-family: 'SF Mono', 'Fira Code', monospace;
+      font-size: 13px;
+      color: var(--accent);
+    }
+
+    .docs-content pre {
+      background: var(--surface);
+      border: 1px solid var(--border);
+      border-radius: 10px;
+      padding: 20px 24px;
+      font-family: 'SF Mono', 'Fira Code', monospace;
+      font-size: 13px;
+      line-height: 1.7;
+      overflow-x: auto;
+      margin-bottom: 20px;
+      color: var(--text);
+    }
+
+    .docs-content pre .prompt { color: var(--accent); }
+    .docs-content pre .comment { color: var(--text-muted); }
+    .docs-content pre .flag { color: var(--blue); }
+
+    .docs-table {
+      width: 100%;
+      border-collapse: collapse;
+      margin-bottom: 20px;
+      font-size: 14px;
+    }
+
+    .docs-table th {
+      text-align: left;
+      padding: 10px 16px;
+      border-bottom: 2px solid var(--border);
+      font-weight: 700;
+      font-size: 13px;
+      text-transform: uppercase;
+      letter-spacing: 0.5px;
+      color: var(--text-muted);
+    }
+
+    .docs-table td {
+      padding: 10px 16px;
+      border-bottom: 1px solid var(--border);
+      color: var(--text-muted);
+    }
+
+    .docs-table td:first-child {
+      color: var(--text);
+      font-family: 'SF Mono', 'Fira Code', monospace;
+      font-size: 13px;
+    }
+
+    .docs-table tr:last-child td { border-bottom: none; }
+
+    .tui-mockup {
+      background: #0c0c14;
+      border: 2px solid #2e2e4e;
+      border-radius: 12px;
+      padding: 20px 24px;
+      font-family: 'SF Mono', 'Fira Code', monospace;
+      font-size: 12px;
+      line-height: 1.6;
+      overflow-x: auto;
+      margin-bottom: 20px;
+      color: var(--text-muted);
+    }
+
+    .tui-mockup .tui-cyan { color: #67e8f9; }
+    .tui-mockup .tui-green { color: var(--accent); }
+    .tui-mockup .tui-yellow { color: var(--yellow); }
+    .tui-mockup .tui-red { color: var(--red); }
+    .tui-mockup .tui-gray { color: #555570; }
+    .tui-mockup .tui-white { color: var(--text); }
+    .tui-mockup .tui-bold { font-weight: 700; color: var(--text); }
+
+    .config-json {
+      background: var(--surface);
+      border: 1px solid var(--border);
+      border-radius: 10px;
+      padding: 20px 24px;
+      font-family: 'SF Mono', 'Fira Code', monospace;
+      font-size: 13px;
+      line-height: 1.7;
+      overflow-x: auto;
+      margin-bottom: 20px;
+    }
+
+    .config-json .key { color: var(--blue); }
+    .config-json .val-str { color: var(--accent); }
+    .config-json .val-num { color: var(--yellow); }
+    .config-json .val-bool { color: var(--orange); }
+
     /* Footer */
     footer {
       padding: 40px 0;
@@ -545,6 +707,7 @@
         <li><a href="#manifesto">Why</a></li>
         <li><a href="#features">Features</a></li>
         <li><a href="#pipeline">Pipeline</a></li>
+        <li><a href="#docs">Docs</a></li>
         <li><a href="#install">Install</a></li>
         <li><a href="https://github.com/redgreenlabs/forge-cli">GitHub</a></li>
       </ul>
@@ -849,6 +1012,251 @@
           <div><span class="phase">## Phase 3: Polish</span></div>
           <br>
           <div>- [ ] <span class="task-id">T005</span> <span class="marker">[P]</span> Add rate limiting</div>
+        </div>
+      </div>
+    </div>
+  </section>
+
+  <!-- Documentation -->
+  <section class="docs" id="docs">
+    <div class="container">
+      <div class="section-label">Documentation</div>
+      <h2 class="section-title">Everything you need to get started</h2>
+      <p class="section-subtitle">From first install to full autonomous loops &mdash; step by step.</p>
+
+      <div class="docs-grid">
+        <nav>
+          <ul class="docs-nav">
+            <li><a href="#docs-quickstart">Quick Start</a></li>
+            <li><a href="#docs-commands">Commands</a></li>
+            <li><a href="#docs-tasks">Task Sources</a></li>
+            <li><a href="#docs-dashboard">Dashboard</a></li>
+            <li><a href="#docs-config">Configuration</a></li>
+            <li><a href="#docs-env">Env Variables</a></li>
+          </ul>
+        </nav>
+
+        <div class="docs-content">
+
+          <!-- Quick Start -->
+          <section id="docs-quickstart">
+            <h3>Quick Start</h3>
+            <p>Get from zero to running in under a minute. You need Node.js &ge; 20 and <a href="https://docs.anthropic.com/en/docs/claude-code" style="color: var(--blue); text-decoration: none;">Claude Code CLI</a> installed.</p>
+            <pre><span class="prompt">$</span> npm install -g @redgreen-labs/forge-cli
+
+<span class="comment"># Initialize a project (auto-detects Node/Python/Rust/Go)</span>
+<span class="prompt">$</span> forge init <span class="flag">--name</span> my-project
+
+<span class="comment"># Import your requirements document</span>
+<span class="prompt">$</span> forge import requirements.md
+
+<span class="comment"># Start the autonomous development loop</span>
+<span class="prompt">$</span> forge run <span class="flag">--iterations</span> 20
+
+<span class="comment"># Check progress anytime</span>
+<span class="prompt">$</span> forge status</pre>
+            <p>That's it. Forge reads your requirements, builds a task dependency graph, and starts executing &mdash; test-first, with security scanning and quality gates on every iteration.</p>
+          </section>
+
+          <!-- Commands -->
+          <section id="docs-commands">
+            <h3>Commands</h3>
+
+            <table class="docs-table">
+              <thead>
+                <tr><th>Command</th><th>Description</th></tr>
+              </thead>
+              <tbody>
+                <tr><td>forge init</td><td>Initialize project, auto-detect workspaces and language</td></tr>
+                <tr><td>forge import &lt;file&gt;</td><td>Import a PRD (Markdown or JSON), scan for existing implementations</td></tr>
+                <tr><td>forge run</td><td>Start the autonomous development loop</td></tr>
+                <tr><td>forge status</td><td>Show session progress and quality metrics</td></tr>
+                <tr><td>forge report</td><td>Generate a project health report (terminal, JSON, or HTML)</td></tr>
+                <tr><td>forge agents</td><td>List and configure agent roles</td></tr>
+              </tbody>
+            </table>
+
+            <h4><code>forge init</code></h4>
+            <table class="docs-table">
+              <thead>
+                <tr><th>Option</th><th>Description</th></tr>
+              </thead>
+              <tbody>
+                <tr><td>-n, --name &lt;name&gt;</td><td>Project name</td></tr>
+                <tr><td>-i, --interactive</td><td>Guided PRD creation with questions</td></tr>
+                <tr><td>--no-scan</td><td>Skip workspace auto-detection</td></tr>
+              </tbody>
+            </table>
+
+            <h4><code>forge import</code></h4>
+            <table class="docs-table">
+              <thead>
+                <tr><th>Option</th><th>Description</th></tr>
+              </thead>
+              <tbody>
+                <tr><td>-v, --verbose</td><td>Show detailed scan output</td></tr>
+                <tr><td>--no-scan</td><td>Skip codebase scan for existing implementations</td></tr>
+              </tbody>
+            </table>
+
+            <h4><code>forge run</code></h4>
+            <table class="docs-table">
+              <thead>
+                <tr><th>Option</th><th>Description</th></tr>
+              </thead>
+              <tbody>
+                <tr><td>-n, --iterations &lt;n&gt;</td><td>Maximum iterations (default: 50)</td></tr>
+                <tr><td>--resume</td><td>Resume from previous run</td></tr>
+                <tr><td>--no-tui</td><td>Disable live TUI (plain text output)</td></tr>
+                <tr><td>--verbose</td><td>Show Claude CLI output</td></tr>
+                <tr><td>--solo</td><td>Single agent mode (no team rotation)</td></tr>
+                <tr><td>--dry-run</td><td>Preview task plan without running Claude</td></tr>
+              </tbody>
+            </table>
+          </section>
+
+          <!-- Task Sources -->
+          <section id="docs-tasks">
+            <h3>Task Sources</h3>
+            <p>Forge supports three task formats, auto-detected in priority order:</p>
+
+            <h4>1. Spec-Kit (recommended)</h4>
+            <p>Use <a href="https://github.com/github/spec-kit" style="color: var(--blue); text-decoration: none;">GitHub's spec-kit</a> for planning, then let Forge execute:</p>
+            <pre><span class="comment"># Generate specs with spec-kit</span>
+<span class="prompt">$</span> npx spec-kit specify
+<span class="prompt">$</span> npx spec-kit plan
+<span class="prompt">$</span> npx spec-kit tasks
+
+<span class="comment"># Forge auto-detects specs/tasks.md</span>
+<span class="prompt">$</span> forge run</pre>
+            <p>Forge reads from the <code>specs/</code> directory:</p>
+            <table class="docs-table">
+              <thead>
+                <tr><th>File</th><th>Purpose</th></tr>
+              </thead>
+              <tbody>
+                <tr><td>specs/tasks.md</td><td>Task list with T-IDs, phases, dependencies</td></tr>
+                <tr><td>specs/constitution.md</td><td>Project principles &mdash; injected into agent prompts</td></tr>
+                <tr><td>specs/spec.md</td><td>Detailed requirements &mdash; injected into agent prompts</td></tr>
+                <tr><td>specs/plan.md</td><td>Architecture decisions &mdash; injected into agent prompts</td></tr>
+              </tbody>
+            </table>
+            <p>Spec-kit task format supports markers: <code>[P]</code> = parallelizable, <code>[US1]</code> = user story ref, <code>(depends on T001)</code> = dependency.</p>
+
+            <h4>2. Forge PRD (JSON)</h4>
+            <pre><span class="prompt">$</span> forge import requirements.md    <span class="comment"># Parses to .forge/prd.json</span>
+<span class="prompt">$</span> forge run</pre>
+
+            <h4>3. Markdown Task List</h4>
+            <pre><span class="comment"># Place a tasks.md in .forge/</span>
+<span class="prompt">$</span> forge run</pre>
+          </section>
+
+          <!-- Dashboard -->
+          <section id="docs-dashboard">
+            <h3>Live Dashboard</h3>
+            <p>The TUI shows everything at a glance &mdash; phase, progress, cost, TDD pipeline, quality gates, and Claude's real-time output.</p>
+
+            <div class="tui-mockup">
+<span class="tui-cyan">╭──────────────────── FORGE  Development Loop ────────────────────╮</span>
+<span class="tui-gray">┌──────────────────────────────────────────────────────────────────┐</span>
+<span class="tui-bold"> Phase:</span> <span class="tui-green">IMPLEMENTING</span>   <span class="tui-bold">Tasks:</span> <span class="tui-green">5</span><span class="tui-gray">/12</span>   <span class="tui-bold">Iter:</span> <span class="tui-white">7</span>
+<span class="tui-bold"> Elapsed:</span> <span class="tui-gray">14:32</span>   <span class="tui-bold">Cost:</span> <span class="tui-yellow">$1.24</span>   <span class="tui-bold">Commits:</span> <span class="tui-green">15</span>   <span class="tui-bold">Files:</span> <span class="tui-white">3</span>
+ [<span class="tui-green">████████████</span><span class="tui-gray">░░</span>] <span class="tui-bold">42%</span>
+<span class="tui-bold"> Task:</span> <span class="tui-white">Implement JWT auth middleware</span>
+ <span class="tui-green">✓RED</span> → <span class="tui-green">●GREEN</span> → <span class="tui-gray">○REFACTOR</span> → <span class="tui-gray">○Gates</span>  <span class="tui-gray">(2 cycles)</span>
+<span class="tui-bold"> Gates:</span> <span class="tui-green">✓tests</span> <span class="tui-green">✓security</span> <span class="tui-green">✓lint</span> <span class="tui-red">✗coverage</span>
+<span class="tui-gray">├──────────────────────────────────────────────────────────────────┤</span>
+<span class="tui-gray"> Claude Output</span>
+<span class="tui-cyan"> ⚡ Writing src/auth/middleware.ts...</span>
+<span class="tui-gray"> Running npm test -- --reporter verbose</span>
+<span class="tui-green"> Tests  42 passed (42)</span>
+<span class="tui-yellow"> Done — Cost: $0.12  Duration: 45s</span>
+<span class="tui-gray">├──────────────────────────────────────────────────────────────────┤</span>
+ [<span class="tui-bold">d</span>] Dashboard  [<span class="tui-bold">q</span>] Quit          <span class="tui-green">✓</span>tests <span class="tui-green">✓</span>sec <span class="tui-green">✓</span>lint <span class="tui-red">✗</span>cov
+<span class="tui-gray">└──────────────────────────────────────────────────────────────────┘</span>
+            </div>
+
+            <h4>Keyboard Shortcuts</h4>
+            <table class="docs-table">
+              <thead>
+                <tr><th>Key</th><th>Action</th></tr>
+              </thead>
+              <tbody>
+                <tr><td>d</td><td>Toggle dashboard overlay (cost breakdown, coverage, security findings, code quality)</td></tr>
+                <tr><td>q</td><td>Quit with confirmation &mdash; gracefully aborts the running Claude process</td></tr>
+              </tbody>
+            </table>
+
+            <h4>Rate Limit Modal</h4>
+            <p>When the API rate limit is hit, the dashboard shows a countdown modal:</p>
+            <div class="tui-mockup" style="text-align: center;">
+<span class="tui-yellow">┌──────────────────────────────────────┐</span>
+<span class="tui-yellow">│</span>                                      <span class="tui-yellow">│</span>
+<span class="tui-yellow">│</span>    <span class="tui-bold" style="color: var(--yellow);">API Rate Limit Reached</span>        <span class="tui-yellow">│</span>
+<span class="tui-yellow">│</span>                                      <span class="tui-yellow">│</span>
+<span class="tui-yellow">│</span>  <span class="tui-white">Waiting for rate limit to reset...</span> <span class="tui-yellow">│</span>
+<span class="tui-yellow">│</span>                                      <span class="tui-yellow">│</span>
+<span class="tui-yellow">│</span>          <span class="tui-cyan" style="font-size: 16px; font-weight: bold;">2h 34m 12s</span>            <span class="tui-yellow">│</span>
+<span class="tui-yellow">│</span>                                      <span class="tui-yellow">│</span>
+<span class="tui-yellow">│</span>     <span class="tui-gray">Resets at 3:45:00 PM</span>           <span class="tui-yellow">│</span>
+<span class="tui-yellow">│</span>  <span class="tui-gray">Session will resume automatically</span>  <span class="tui-yellow">│</span>
+<span class="tui-yellow">│</span>                                      <span class="tui-yellow">│</span>
+<span class="tui-yellow">└──────────────────────────────────────┘</span>
+            </div>
+            <p>Forge waits for the exact reset time from the API and resumes automatically. Rate limits don't count as task failures.</p>
+          </section>
+
+          <!-- Configuration -->
+          <section id="docs-config">
+            <h3>Configuration</h3>
+            <p>Create <code>.forge/forge.config.json</code> in your project root:</p>
+            <div class="config-json">
+{
+  <span class="key">"maxIterations"</span>: <span class="val-num">50</span>,
+  <span class="key">"maxCallsPerHour"</span>: <span class="val-num">100</span>,
+  <span class="key">"timeoutMinutes"</span>: <span class="val-num">15</span>,
+  <span class="key">"tdd"</span>: {
+    <span class="key">"enabled"</span>: <span class="val-bool">true</span>,
+    <span class="key">"requireFailingTestFirst"</span>: <span class="val-bool">true</span>,
+    <span class="key">"commitPerPhase"</span>: <span class="val-bool">true</span>
+  },
+  <span class="key">"coverage"</span>: {
+    <span class="key">"lineThreshold"</span>: <span class="val-num">80</span>,
+    <span class="key">"branchThreshold"</span>: <span class="val-num">70</span>
+  },
+  <span class="key">"security"</span>: {
+    <span class="key">"enabled"</span>: <span class="val-bool">true</span>,
+    <span class="key">"sast"</span>: <span class="val-bool">true</span>,
+    <span class="key">"dependencyAudit"</span>: <span class="val-bool">true</span>,
+    <span class="key">"secretScanning"</span>: <span class="val-bool">true</span>,
+    <span class="key">"blockOnSeverity"</span>: <span class="val-str">"high"</span>
+  },
+  <span class="key">"agents"</span>: {
+    <span class="key">"team"</span>: [<span class="val-str">"architect"</span>, <span class="val-str">"implementer"</span>, <span class="val-str">"tester"</span>, <span class="val-str">"reviewer"</span>],
+    <span class="key">"soloMode"</span>: <span class="val-bool">false</span>
+  }
+}
+            </div>
+          </section>
+
+          <!-- Env Variables -->
+          <section id="docs-env">
+            <h3>Environment Variables</h3>
+            <p>Override any config option via environment variables:</p>
+            <table class="docs-table">
+              <thead>
+                <tr><th>Variable</th><th>Effect</th></tr>
+              </thead>
+              <tbody>
+                <tr><td>FORGE_MAX_ITERATIONS</td><td>Override max loop iterations</td></tr>
+                <tr><td>FORGE_MAX_CALLS_PER_HOUR</td><td>Override API rate limit</td></tr>
+                <tr><td>FORGE_TDD_ENABLED</td><td>Enable/disable TDD enforcement</td></tr>
+                <tr><td>FORGE_SECURITY_ENABLED</td><td>Enable/disable security scanning</td></tr>
+              </tbody>
+            </table>
+          </section>
+
         </div>
       </div>
     </div>
