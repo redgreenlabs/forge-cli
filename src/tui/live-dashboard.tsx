@@ -163,9 +163,6 @@ function StatusBox({ state, startedAt }: {
       <Text> </Text>
       <Box gap={1}>
         <TddPipeline tddPhase={tddPhase} tddCycles={tddCycles} qualityReport={state.qualityReport} />
-        {state.rateLimitWaiting && (
-          <Text color="yellow">⏳ Rate limited — {Math.ceil(Math.max(0, state.rateLimitWaiting.until - Date.now()) / 1000)}s</Text>
-        )}
       </Box>
 
       {/* Row 6: Quality gates (when available) */}
@@ -476,6 +473,55 @@ function InlineGates({ results }: { results: GateResult[] }) {
   );
 }
 
+// ── Rate Limit Modal ──────────────────────────────────────────────
+
+function RateLimitModal({ until }: { until: number }) {
+  const [now, setNow] = useState(Date.now());
+
+  useEffect(() => {
+    const interval = setInterval(() => setNow(Date.now()), 1000);
+    return () => clearInterval(interval);
+  }, []);
+
+  const remainingMs = Math.max(0, until - now);
+  const totalSec = Math.ceil(remainingMs / 1000);
+  const hours = Math.floor(totalSec / 3600);
+  const minutes = Math.floor((totalSec % 3600) / 60);
+  const seconds = totalSec % 60;
+
+  const countdown = hours > 0
+    ? `${hours}h ${String(minutes).padStart(2, "0")}m ${String(seconds).padStart(2, "0")}s`
+    : minutes > 0
+      ? `${minutes}m ${String(seconds).padStart(2, "0")}s`
+      : `${seconds}s`;
+
+  const resetsAt = new Date(until).toLocaleTimeString();
+
+  return (
+    <Box
+      borderStyle="single"
+      borderColor="yellow"
+      flexDirection="column"
+      flexGrow={1}
+      paddingX={2}
+      paddingY={1}
+      justifyContent="center"
+      alignItems="center"
+    >
+      <Text> </Text>
+      <Text bold color="yellow">API Rate Limit Reached</Text>
+      <Text> </Text>
+      <Text color="white">Waiting for rate limit to reset...</Text>
+      <Text> </Text>
+      <Text bold color="cyan">{countdown}</Text>
+      <Text> </Text>
+      <Text color="gray">Resets at {resetsAt}</Text>
+      <Text color="gray">Session will resume automatically</Text>
+      <Text> </Text>
+    </Box>
+  );
+}
+
 // ── Gate Failure Banner ────────────────────────────────────────────
 
 function GateFailureBanner({ report }: { report: PipelineResult }) {
@@ -536,8 +582,10 @@ function Dashboard({ state, startedAt, onQuit }: { state: DashboardState; starte
         <GateFailureBanner report={state.qualityReport} />
       )}
 
-      {/* Main content: overlay or Claude output */}
-      {showOverlay ? (
+      {/* Main content: rate limit modal, overlay, or Claude output */}
+      {state.rateLimitWaiting ? (
+        <RateLimitModal until={state.rateLimitWaiting.until} />
+      ) : showOverlay ? (
         <DashboardOverlay state={state} />
       ) : (
         <ClaudeOutputBox logs={state.claudeLogs ?? []} />
