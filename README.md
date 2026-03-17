@@ -100,25 +100,29 @@ forge run
 
 | Command | Description |
 |---------|-------------|
-| `forge init` | Initialize project, auto-detect workspaces |
-| `forge import <file>` | Import PRD, scan for existing implementations |
+| `forge init` | Initialize project, auto-detect workspaces and language |
+| `forge import <file>` | Import PRD, scan for existing implementations, auto-decompose |
 | `forge run` | Start the autonomous development loop |
 | `forge status` | Show session progress and quality metrics |
 | `forge report` | Generate a project health report |
-| `forge agents` | List and configure agent roles |
+| `forge decompose` | Decompose large tasks into smaller TDD-friendly subtasks |
+| `forge agents` | List available agent roles and their tools |
 
 ### `forge init` Options
 
 ```
---no-scan             Skip workspace auto-detection
 -n, --name <name>     Project name
 -i, --interactive     Guided PRD creation
+-f, --force           Overwrite existing .forge directory
+--no-scan             Skip workspace auto-detection
+-v, --verbose         Show detailed scan output
 ```
 
 ### `forge import` Options
 
 ```
 --no-scan             Skip codebase scan for existing implementations
+--no-decompose        Skip automatic decomposition of large tasks
 -v, --verbose         Show detailed scan output
 ```
 
@@ -126,11 +130,34 @@ forge run
 
 ```
 -n, --iterations <n>  Maximum iterations (default: 50)
---resume              Resume from previous run
+--resume              Resume from previous run, skipping completed tasks
 --no-tui              Disable live TUI (plain text output)
---verbose             Show Claude CLI output
---solo                Single agent mode
---dry-run             Preview without running Claude
+-v, --verbose         Show detailed executor output
+--solo                Single agent mode (no team rotation)
+--dry-run             Simulate execution without running Claude
+```
+
+### `forge status` Options
+
+```
+--json                Output as JSON
+-w, --watch           Refresh status every few seconds
+--interval <seconds>  Watch interval in seconds (default: 3)
+```
+
+### `forge report` Options
+
+```
+-f, --format <type>   Output format: terminal, html, or json (default: terminal)
+```
+
+### `forge decompose` Options
+
+```
+--threshold <n>       Complexity threshold 1-10 (tasks above this are decomposed)
+--max-subtasks <n>    Max subtasks per parent task
+--dry-run             Show which tasks would be decomposed without calling Claude
+-v, --verbose         Show detailed output
 ```
 
 ## How It Works

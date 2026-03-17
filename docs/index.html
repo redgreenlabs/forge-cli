@@ -1068,11 +1068,12 @@
               </thead>
               <tbody>
                 <tr><td>forge init</td><td>Initialize project, auto-detect workspaces and language</td></tr>
-                <tr><td>forge import &lt;file&gt;</td><td>Import a PRD (Markdown or JSON), scan for existing implementations</td></tr>
+                <tr><td>forge import &lt;file&gt;</td><td>Import a PRD (Markdown or JSON), scan and auto-decompose</td></tr>
                 <tr><td>forge run</td><td>Start the autonomous development loop</td></tr>
                 <tr><td>forge status</td><td>Show session progress and quality metrics</td></tr>
                 <tr><td>forge report</td><td>Generate a project health report (terminal, JSON, or HTML)</td></tr>
-                <tr><td>forge agents</td><td>List and configure agent roles</td></tr>
+                <tr><td>forge decompose</td><td>Decompose large tasks into smaller TDD-friendly subtasks</td></tr>
+                <tr><td>forge agents</td><td>List available agent roles and their tools</td></tr>
               </tbody>
             </table>
 
@@ -1084,7 +1085,9 @@
               <tbody>
                 <tr><td>-n, --name &lt;name&gt;</td><td>Project name</td></tr>
                 <tr><td>-i, --interactive</td><td>Guided PRD creation with questions</td></tr>
+                <tr><td>-f, --force</td><td>Overwrite existing .forge directory</td></tr>
                 <tr><td>--no-scan</td><td>Skip workspace auto-detection</td></tr>
+                <tr><td>-v, --verbose</td><td>Show detailed scan output</td></tr>
               </tbody>
             </table>
 
@@ -1096,6 +1099,7 @@
               <tbody>
                 <tr><td>-v, --verbose</td><td>Show detailed scan output</td></tr>
                 <tr><td>--no-scan</td><td>Skip codebase scan for existing implementations</td></tr>
+                <tr><td>--no-decompose</td><td>Skip automatic decomposition of large tasks</td></tr>
               </tbody>
             </table>
 
@@ -1106,11 +1110,46 @@
               </thead>
               <tbody>
                 <tr><td>-n, --iterations &lt;n&gt;</td><td>Maximum iterations (default: 50)</td></tr>
-                <tr><td>--resume</td><td>Resume from previous run</td></tr>
+                <tr><td>--resume</td><td>Resume from previous run, skipping completed tasks</td></tr>
                 <tr><td>--no-tui</td><td>Disable live TUI (plain text output)</td></tr>
-                <tr><td>--verbose</td><td>Show Claude CLI output</td></tr>
+                <tr><td>-v, --verbose</td><td>Show detailed executor output</td></tr>
                 <tr><td>--solo</td><td>Single agent mode (no team rotation)</td></tr>
-                <tr><td>--dry-run</td><td>Preview task plan without running Claude</td></tr>
+                <tr><td>--dry-run</td><td>Simulate execution without running Claude</td></tr>
+              </tbody>
+            </table>
+
+            <h4><code>forge status</code></h4>
+            <table class="docs-table">
+              <thead>
+                <tr><th>Option</th><th>Description</th></tr>
+              </thead>
+              <tbody>
+                <tr><td>--json</td><td>Output as JSON</td></tr>
+                <tr><td>-w, --watch</td><td>Refresh status every few seconds</td></tr>
+                <tr><td>--interval &lt;seconds&gt;</td><td>Watch interval in seconds (default: 3)</td></tr>
+              </tbody>
+            </table>
+
+            <h4><code>forge report</code></h4>
+            <table class="docs-table">
+              <thead>
+                <tr><th>Option</th><th>Description</th></tr>
+              </thead>
+              <tbody>
+                <tr><td>-f, --format &lt;type&gt;</td><td>Output format: terminal, html, or json (default: terminal)</td></tr>
+              </tbody>
+            </table>
+
+            <h4><code>forge decompose</code></h4>
+            <table class="docs-table">
+              <thead>
+                <tr><th>Option</th><th>Description</th></tr>
+              </thead>
+              <tbody>
+                <tr><td>--threshold &lt;n&gt;</td><td>Complexity threshold 1-10 (tasks above this are decomposed)</td></tr>
+                <tr><td>--max-subtasks &lt;n&gt;</td><td>Max subtasks per parent task</td></tr>
+                <tr><td>--dry-run</td><td>Show which tasks would be decomposed without calling Claude</td></tr>
+                <tr><td>-v, --verbose</td><td>Show detailed output</td></tr>
               </tbody>
             </table>
           </section>
