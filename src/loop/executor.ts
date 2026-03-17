@@ -129,7 +129,7 @@ export function parseClaudeResponse(raw: RawClaudeOutput, streamEvents?: StreamE
       filesModified: [],
       testsPass: false,
       testResults: { total: 0, passed: 0, failed: 0 },
-      error: timeoutMsg ?? errorText,
+      error: timeoutMsg ?? (errorText.length > 500 ? errorText.slice(0, 500) + "..." : errorText),
       contextExhausted: isContextLimit,
       rateLimited: isRateLimited,
       rawStderr: raw.stderr || undefined,
@@ -283,13 +283,33 @@ function parseStreamEvents(events: StreamEvent[], raw: RawClaudeOutput): ClaudeR
     } catch { /* ignore */ }
   }
 
+  // Detect rate limit from error result text (e.g. "You've hit your limit · resets 3pm")
+  const isRateLimitResult = isError && detectRateLimitInText(resultText);
+  let rateLimitResetsAt: number | undefined;
+  if (isRateLimitResult) {
+    // Try to extract resetsAt from the result event's raw JSON
+    for (const evt of events) {
+      if (evt.type === "rate_limit_event") {
+        try {
+          const p = JSON.parse(evt.raw);
+          if (p.rate_limit_info?.resetsAt) {
+            rateLimitResetsAt = p.rate_limit_info.resetsAt;
+            break;
+          }
+        } catch { /* ignore */ }
+      }
+    }
+  }
+
   return {
     status: isError ? "error" : "success",
     exitSignal,
     filesModified,
     testsPass,
     testResults,
-    error: isError ? (resultText || "Claude execution error") : null,
+    error: isError ? (resultText ? resultText.slice(0, 500) : "Claude execution error") : null,
+    rateLimited: isRateLimitResult || undefined,
+    rateLimitResetsAt,
     resultText: resultText || raw.stdout,
     rawStderr: raw.stderr || undefined,
     sessionId: resultEvent?.session_id ?? events.find((e) => e.session_id)?.session_id,
@@ -440,7 +460,10 @@ function detectRateLimitInText(text: string): boolean {
     lower.includes("5 hour limit") ||
     lower.includes("usage limit reached") ||
     lower.includes("rate limit") ||
-    /limit reached.*try back/i.test(text)
+    lower.includes("you've hit your limit") ||
+    lower.includes("hit your limit") ||
+    /limit reached.*try back/i.test(text) ||
+    /hit your.*limit.*resets/i.test(text)
   );
 }
 
@@ -451,16 +474,21 @@ function detectRateLimitInText(text: string): boolean {
  */
 function detectRateLimitInItems(items: ConversationItem[]): { detected: boolean; resetsAt?: number } {
   for (const item of items) {
-    // Check for rate_limit_event type
+    // Check for rate_limit_event type — only treat "rejected" as a rate limit.
+    // "allowed_warning" events are informational (utilization approaching limit)
+    // and should NOT trigger rate limit handling.
     if (item.type === "rate_limit_event") {
       const raw = item as unknown as Record<string, unknown>;
-      const resetsAt = raw.rate_limit_info
-        ? (raw.rate_limit_info as Record<string, unknown>)?.resetsAt as number | undefined
-        : undefined;
+      const info = raw.rate_limit_info as Record<string, unknown> | undefined;
+      // Skip allowed_warning — only act on rejected or missing status
+      if (info?.status === "allowed_warning") {
+        continue;
+      }
+      const resetsAt = info?.resetsAt as number | undefined;
       return { detected: true, resetsAt };
     }
 
-    // Check content for rate limit indicators
+    // Check content for rate limit indicators (text fallback)
     const contentStr =
       typeof item.content === "string"
         ? item.content

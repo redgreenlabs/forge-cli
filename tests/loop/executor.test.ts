@@ -360,6 +360,72 @@ EXIT_SIGNAL: false
       expect(result.rateLimitResetsAt).toBeUndefined();
     });
 
+    it("should ignore allowed_warning rate_limit_event and not treat as rate limited", () => {
+      const raw: RawClaudeOutput = {
+        stdout: JSON.stringify([
+          {
+            type: "rate_limit_event",
+            content: "Warning",
+            rate_limit_info: {
+              status: "allowed_warning",
+              utilization: 0.9,
+              resetsAt: Math.floor(Date.now() / 1000) + 3600,
+            },
+          },
+          { type: "result", result: "Task completed successfully" },
+        ]),
+        stderr: "",
+        exitCode: 0,
+      };
+
+      const result = parseClaudeResponse(raw);
+      expect(result.rateLimited).toBeFalsy();
+      expect(result.status).toBe("success");
+    });
+
+    it("should detect rejected rate_limit_event but not allowed_warning", () => {
+      const raw: RawClaudeOutput = {
+        stdout: JSON.stringify([
+          {
+            type: "rate_limit_event",
+            rate_limit_info: { status: "allowed_warning", utilization: 0.98 },
+          },
+          {
+            type: "rate_limit_event",
+            rate_limit_info: { status: "rejected", resetsAt: 1773756000 },
+          },
+        ]),
+        stderr: "",
+        exitCode: 0,
+      };
+
+      const result = parseClaudeResponse(raw);
+      expect(result.rateLimited).toBe(true);
+      expect(result.error).toContain("rate limit");
+    });
+
+    it("should detect 'hit your limit' in error text as rate limited", () => {
+      const raw: RawClaudeOutput = {
+        stdout: "",
+        stderr: "You've hit your limit · resets 3pm (Europe/Zurich)",
+        exitCode: 1,
+      };
+
+      const result = parseClaudeResponse(raw);
+      expect(result.rateLimited).toBe(true);
+    });
+
+    it("should truncate long error messages to 500 chars", () => {
+      const raw: RawClaudeOutput = {
+        stdout: "",
+        stderr: "x".repeat(2000),
+        exitCode: 1,
+      };
+
+      const result = parseClaudeResponse(raw);
+      expect(result.error!.length).toBeLessThanOrEqual(503); // 500 + "..."
+    });
+
     it("should include rawStderr and rawStdout on timeout errors", () => {
       const raw: RawClaudeOutput = {
         stdout: '{"partial": "output from claude"}',

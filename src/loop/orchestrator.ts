@@ -779,6 +779,10 @@ export class LoopOrchestrator {
       if (response.rateLimitResetsAt) {
         until = response.rateLimitResetsAt * 1000; // Convert seconds to ms
         waitMs = Math.max(0, until - Date.now());
+        // Enforce minimum 60s wait to prevent retry storms when resetsAt is stale
+        // (unless rateLimitWaitMinutes is explicitly 0, e.g. in tests)
+        const minWaitMs = this._config.rateLimitWaitMinutes > 0 ? 60_000 : 0;
+        if (waitMs < minWaitMs) waitMs = minWaitMs;
         const waitMin = Math.ceil(waitMs / 60_000);
         this.logAgent("system", "rate-limited",
           `API rate limit hit — waiting ${waitMin} minutes (resets at ${new Date(until).toLocaleTimeString()})`);
@@ -788,7 +792,7 @@ export class LoopOrchestrator {
         this.logAgent("system", "rate-limited",
           `API rate limit hit — waiting ${this._config.rateLimitWaitMinutes} minutes`);
       }
-      this._rateLimitWaiting = { until, reason: "API rate limit reached" };
+      this._rateLimitWaiting = { until: Date.now() + waitMs, reason: "API rate limit reached" };
       this.emitDashboardUpdate();
 
       await this.waitWithCountdown(waitMs);
@@ -796,11 +800,19 @@ export class LoopOrchestrator {
       this._rateLimitWaiting = undefined;
       this._sessionId = undefined;
       this.emitDashboardUpdate();
-      return this._executor.execute({
+
+      // Single retry after waiting — if still rate-limited, return the error
+      // to avoid infinite retry storms
+      const retryResponse = await this._executor.execute({
         ...options,
         sessionId: undefined,
         signal: this._signal,
       });
+      if (retryResponse.rateLimited) {
+        this.logAgent("system", "rate-limited",
+          "Still rate-limited after waiting — will retry on next iteration");
+      }
+      return retryResponse;
     }
 
     return response;
@@ -934,6 +946,23 @@ export class LoopOrchestrator {
           action: "cost",
           detail: `$${cost.toFixed(4)} (total: $${this._costTotal.toFixed(4)})`,
         });
+        this.emitDashboardUpdate();
+      }
+
+      // Rate limit event — show modal immediately
+      if (event.type === "rate_limit_event") {
+        try {
+          const parsed = JSON.parse(event.raw);
+          const info = parsed.rate_limit_info;
+          if (info?.status === "rejected" && info.resetsAt) {
+            const until = info.resetsAt * 1000;
+            this._rateLimitWaiting = { until, reason: "API rate limit reached" };
+            pushClaudeLog(`⏳ Rate limited — resets at ${new Date(until).toLocaleTimeString()}`);
+          } else if (info?.status === "allowed_warning" && info.utilization) {
+            const pct = Math.round(info.utilization * 100);
+            pushClaudeLog(`⚠ API usage at ${pct}% — approaching rate limit`);
+          }
+        } catch { /* ignore parse error */ }
         this.emitDashboardUpdate();
       }
 
