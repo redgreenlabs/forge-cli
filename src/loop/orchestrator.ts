@@ -64,6 +64,8 @@ export interface ClaudeResponse {
   contextExhausted?: boolean;
   /** Whether the error was caused by API rate limiting */
   rateLimited?: boolean;
+  /** Unix timestamp (seconds) when the rate limit resets */
+  rateLimitResetsAt?: number;
   /** Raw stderr output from Claude CLI (preserved for timeout diagnostics) */
   rawStderr?: string;
   /** Raw stdout output from Claude CLI (preserved for timeout diagnostics) */
@@ -345,8 +347,8 @@ export class LoopOrchestrator {
       // retrying the same task will likely fail the same way.
       this.circuitBreaker.recordIteration({
         filesModified: pipelineResult.completed ? filesModified.length : 0,
-        error: pipelineResult.error ?? null,
-        testsPass: pipelineResult.gatesPassed,
+        error: pipelineResult.rateLimited ? null : (pipelineResult.error ?? null),
+        testsPass: pipelineResult.rateLimited ? true : pipelineResult.gatesPassed,
       });
       this.engine.setCircuitBreakerState(this.circuitBreaker.state);
 
@@ -388,7 +390,8 @@ export class LoopOrchestrator {
       }
 
       // Track per-task failures and skip after maxTaskFailures consecutive failures
-      if (!pipelineResult.completed && currentTask) {
+      // Rate-limited failures are not the task's fault — don't count them
+      if (!pipelineResult.completed && currentTask && !pipelineResult.rateLimited) {
         const failCount = (this._taskFailureCounts.get(currentTask.id) ?? 0) + 1;
         this._taskFailureCounts.set(currentTask.id, failCount);
 
@@ -770,10 +773,21 @@ export class LoopOrchestrator {
     }
 
     if (response.rateLimited) {
-      const waitMs = this._config.rateLimitWaitMinutes * 60 * 1000;
-      const until = Date.now() + waitMs;
-      this.logAgent("system", "rate-limited",
-        `API rate limit hit — waiting ${this._config.rateLimitWaitMinutes} minutes`);
+      // Use resetsAt from API if available, otherwise fall back to config
+      let waitMs: number;
+      let until: number;
+      if (response.rateLimitResetsAt) {
+        until = response.rateLimitResetsAt * 1000; // Convert seconds to ms
+        waitMs = Math.max(0, until - Date.now());
+        const waitMin = Math.ceil(waitMs / 60_000);
+        this.logAgent("system", "rate-limited",
+          `API rate limit hit — waiting ${waitMin} minutes (resets at ${new Date(until).toLocaleTimeString()})`);
+      } else {
+        waitMs = this._config.rateLimitWaitMinutes * 60 * 1000;
+        until = Date.now() + waitMs;
+        this.logAgent("system", "rate-limited",
+          `API rate limit hit — waiting ${this._config.rateLimitWaitMinutes} minutes`);
+      }
       this._rateLimitWaiting = { until, reason: "API rate limit reached" };
       this.emitDashboardUpdate();
 

@@ -160,8 +160,8 @@ export function parseClaudeResponse(raw: RawClaudeOutput, streamEvents?: StreamE
   }
 
   // Layer 1: Check for rate_limit_event in structured JSON output
-  const rateLimitedFromJson = detectRateLimitInItems(conversationItems);
-  if (rateLimitedFromJson) {
+  const rateLimitCheck = detectRateLimitInItems(conversationItems);
+  if (rateLimitCheck.detected) {
     return {
       status: "error",
       exitSignal: false,
@@ -170,6 +170,7 @@ export function parseClaudeResponse(raw: RawClaudeOutput, streamEvents?: StreamE
       testResults: { total: 0, passed: 0, failed: 0 },
       error: "API rate limit reached (rate_limit_event detected)",
       rateLimited: true,
+      rateLimitResetsAt: rateLimitCheck.resetsAt,
     };
   }
 
@@ -232,6 +233,7 @@ function parseStreamEvents(events: StreamEvent[], raw: RawClaudeOutput): ClaudeR
             testResults: { total: 0, passed: 0, failed: 0 },
             error: "API rate limit reached (rate_limit_event rejected)",
             rateLimited: true,
+            rateLimitResetsAt: parsed.rate_limit_info?.resetsAt,
           };
         }
       } catch { /* ignore parse error */ }
@@ -445,11 +447,18 @@ function detectRateLimitInText(text: string): boolean {
 /**
  * Detect rate_limit_event in Claude CLI structured JSON output.
  * Layer 1: Structural detection from conversation items.
+ * Returns resetsAt timestamp if available.
  */
-function detectRateLimitInItems(items: ConversationItem[]): boolean {
+function detectRateLimitInItems(items: ConversationItem[]): { detected: boolean; resetsAt?: number } {
   for (const item of items) {
     // Check for rate_limit_event type
-    if (item.type === "rate_limit_event") return true;
+    if (item.type === "rate_limit_event") {
+      const raw = item as unknown as Record<string, unknown>;
+      const resetsAt = raw.rate_limit_info
+        ? (raw.rate_limit_info as Record<string, unknown>)?.resetsAt as number | undefined
+        : undefined;
+      return { detected: true, resetsAt };
+    }
 
     // Check content for rate limit indicators
     const contentStr =
@@ -462,10 +471,10 @@ function detectRateLimitInItems(items: ConversationItem[]): boolean {
       contentStr.includes("rate_limit_event") &&
       contentStr.includes('"rejected"')
     ) {
-      return true;
+      return { detected: true };
     }
   }
-  return false;
+  return { detected: false };
 }
 
 /**

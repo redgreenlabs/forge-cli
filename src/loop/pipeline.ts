@@ -60,6 +60,8 @@ export interface PipelinePhaseResult {
   securityPassed: boolean;
   gatesPassed: boolean;
   qualityReport?: PipelineResult;
+  /** Whether the failure was caused by API rate limiting (should not count as task failure) */
+  rateLimited?: boolean;
   /** Whether any phase produced an explicit EXIT_SIGNAL from Claude */
   exitSignal: boolean;
 }
@@ -322,6 +324,7 @@ export class IterationPipeline {
       securityPassed: true,
       gatesPassed: true,
       exitSignal: false,
+      rateLimited: error.includes("rate limit") || error.includes("rate_limit"),
     };
   }
 }
