@@ -164,6 +164,47 @@ describe("DashboardState interface", () => {
     expect(avgPerCall).toBe(0.2);
   });
 
+  it("should accept rateLimitWaiting with until timestamp", () => {
+    const until = Date.now() + 300_000; // 5 minutes from now
+    const state = makeDashState({
+      rateLimitWaiting: { until, reason: "API rate limit reached" },
+    });
+    expect(state.rateLimitWaiting).toBeDefined();
+    expect(state.rateLimitWaiting?.until).toBe(until);
+    expect(state.rateLimitWaiting?.reason).toBe("API rate limit reached");
+  });
+
+  it("should have rateLimitWaiting undefined by default", () => {
+    const state = makeDashState();
+    expect(state.rateLimitWaiting).toBeUndefined();
+  });
+
+  it("should compute correct countdown from rateLimitWaiting.until", () => {
+    const until = Date.now() + 3_661_000; // ~1h 1m 1s from now
+    const state = makeDashState({
+      rateLimitWaiting: { until, reason: "API rate limit reached" },
+    });
+
+    const remainingMs = Math.max(0, state.rateLimitWaiting!.until - Date.now());
+    const totalSec = Math.ceil(remainingMs / 1000);
+    const hours = Math.floor(totalSec / 3600);
+    const minutes = Math.floor((totalSec % 3600) / 60);
+
+    expect(hours).toBe(1);
+    expect(minutes).toBeGreaterThanOrEqual(0);
+    expect(minutes).toBeLessThanOrEqual(1);
+  });
+
+  it("should handle rateLimitWaiting with expired timestamp", () => {
+    const until = Date.now() - 1000; // Already expired
+    const state = makeDashState({
+      rateLimitWaiting: { until, reason: "API rate limit reached" },
+    });
+
+    const remainingMs = Math.max(0, state.rateLimitWaiting!.until - Date.now());
+    expect(remainingMs).toBe(0);
+  });
+
   it("should accept all fields together including cost", () => {
     const state = makeDashState({
       currentTask: "Implement login form",
