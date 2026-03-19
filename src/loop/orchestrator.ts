@@ -771,6 +771,11 @@ export class LoopOrchestrator {
     failCount: number,
     lastError: string | null
   ): Promise<void> {
+    // Clear stale rate limit modal before showing task failure prompt
+    if (this._rateLimitWaiting) {
+      this._rateLimitWaiting = undefined;
+      this.emitDashboardUpdate();
+    }
     if (this._onTaskFailure) {
       const decision = await this._onTaskFailure({
         id: task.id,
@@ -1034,6 +1039,12 @@ export class LoopOrchestrator {
       }
 
       // Result event — log cost and accumulate totals
+      if (event.type === "result") {
+        // Execution completed — clear any stale rate limit modal from stream events
+        if (this._rateLimitWaiting) {
+          this._rateLimitWaiting = undefined;
+        }
+      }
       if (event.type === "result" && event.total_cost_usd) {
         const cost = event.total_cost_usd;
         const costLine = `✓ Done — $${cost.toFixed(4)} (${event.duration_ms ?? 0}ms)`;
