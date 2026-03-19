@@ -807,6 +807,12 @@ export class LoopOrchestrator {
           this.logAgent("system", "user-abort", "User aborted session");
           break;
       }
+      // User made a conscious decision — reset circuit breaker so the loop
+      // continues with the next task instead of stopping from stale failures
+      if (decision.action !== "abort") {
+        this.circuitBreaker.reset();
+        this.engine.setCircuitBreakerState(this.circuitBreaker.state);
+      }
     } else {
       // Headless: auto-skip
       this.taskGraph.markSkipped(task.id);
