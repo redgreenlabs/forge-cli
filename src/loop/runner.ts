@@ -22,6 +22,8 @@ export interface LoopRunnerOptions {
   extraSystemContext?: string;
   /** Callback for human-in-the-loop on task failure (if not set, auto-skips) */
   onTaskFailure?: OnTaskFailure;
+  /** Expedite mode — skip TDD, security, quality gates for fast prototyping */
+  expedite?: boolean;
 }
 
 /** Result of a complete loop run */
@@ -68,6 +70,7 @@ export class LoopRunner {
       onDashboardUpdate: options.onDashboardUpdate ?? (() => {}),
       extraSystemContext: options.extraSystemContext,
       onTaskFailure: options.onTaskFailure,
+      expedite: options.expedite,
     });
 
     this.resume = options.resume ?? false;

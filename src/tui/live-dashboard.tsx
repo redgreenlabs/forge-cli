@@ -679,6 +679,14 @@ function Dashboard({ state, startedAt, onQuit, taskFailure, onTaskFailureDecisio
       {/* Title */}
       <TitleBar tick={tick} phase={state.loop.phase} />
 
+      {/* Expedite banner */}
+      {state.expedite && (
+        <Box justifyContent="center" paddingX={1}>
+          <Text bold backgroundColor="yellow" color="black"> EXPEDITE MODE </Text>
+          <Text color="yellow"> No tests, no gates, no security — prototyping only</Text>
+        </Box>
+      )}
+
       {/* Status */}
       <StatusBox state={state} startedAt={startedAt} />
 

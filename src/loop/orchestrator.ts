@@ -104,6 +104,8 @@ export interface OrchestratorOptions {
   extraSystemContext?: string;
   /** Callback for human-in-the-loop on task failure (if not set, auto-skips) */
   onTaskFailure?: OnTaskFailure;
+  /** Expedite mode — skip TDD, security, quality gates for fast prototyping */
+  expedite?: boolean;
 }
 
 /** State snapshot for TUI dashboard updates */
@@ -130,6 +132,8 @@ export interface DashboardState {
   claudeLogs: string[];
   /** Accumulated cost metrics */
   cost?: CostMetrics;
+  /** Expedite mode — no tests, no gates, prototype only */
+  expedite?: boolean;
 }
 
 /**
@@ -181,6 +185,7 @@ export class LoopOrchestrator {
   private _onTaskFailure?: OnTaskFailure;
   private _taskGuidance = new Map<string, string>();
   private _userAborted = false;
+  private _expedite: boolean;
 
   constructor(options: OrchestratorOptions) {
     this._config = options.config;
@@ -212,6 +217,7 @@ export class LoopOrchestrator {
     this._teamComposer = TeamComposer.fromConfig(options.config.agents);
     this._taskManifest = TaskManifest.load(this._projectRoot);
     this._onTaskFailure = options.onTaskFailure;
+    this._expedite = options.expedite ?? false;
 
     this.engine.setTotalTasks(options.tasks.length);
 
@@ -319,9 +325,9 @@ export class LoopOrchestrator {
 
       // Create and run the iteration pipeline
       const pipeline = new IterationPipeline({
-        tddEnabled: this._config.tdd.enabled,
-        securityEnabled: this._config.security.enabled,
-        qualityGatesEnabled: true,
+        tddEnabled: this._expedite ? false : this._config.tdd.enabled,
+        securityEnabled: this._expedite ? false : this._config.security.enabled,
+        qualityGatesEnabled: !this._expedite,
         autoCommit: this._config.tdd.commitPerPhase,
         maxPhaseRetries: this._config.retry.maxPhaseRetries,
         retryDelayMs: this._config.retry.retryDelayMs,
@@ -546,12 +552,16 @@ export class LoopOrchestrator {
       },
 
       executeGreenPhase: async (): Promise<PhaseResult> => {
-        this.logAgent(AgentRole.Implementer, "green-phase", "Implementing to pass tests");
+        this.logAgent(AgentRole.Implementer, "green-phase",
+          this._expedite ? "Implementing (expedite)" : "Implementing to pass tests");
         const { stderrHandler: implStderr, streamHandler: implStream } = this.makeHandlers(AgentRole.Implementer);
         // Continue the session from the red phase so Claude already has test files in context
         const greenSessionId = taskSessionId ?? getSessionId();
+        const greenPrompt = this._expedite
+          ? `[EXPEDITE] Implement this feature quickly:\n${taskContext}${handoffSection}\n\nFocus on working code. Skip tests. Ship fast.`
+          : `[TDD GREEN PHASE] Implement the MINIMAL code to make the failing test pass:\n${taskContext}${handoffSection}\n\nWrite only enough code to pass the test. Keep it simple.`;
         const response = await this.executeWithSessionRotation({
-          prompt: `[TDD GREEN PHASE] Implement the MINIMAL code to make the failing test pass:\n${taskContext}${handoffSection}\n\nWrite only enough code to pass the test. Keep it simple.`,
+          prompt: greenPrompt,
           systemPrompt: tddSystemPrompt,
           allowedTools: tddTools,
           timeout,
@@ -1109,6 +1119,7 @@ export class LoopOrchestrator {
         executions: this._executionCount,
         completedTasks: this.engine.state.tasksCompleted,
       } : undefined,
+      expedite: this._expedite || undefined,
     });
   }
 }

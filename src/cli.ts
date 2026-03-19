@@ -173,6 +173,7 @@ program
   .option("--solo", "Run in solo mode (single agent)")
   .option("--dry-run", "Simulate execution without running Claude")
   .option("--resume", "Resume from previous run, skipping completed tasks")
+  .option("--expedite", "Skip TDD, security, and quality gates for fast prototyping")
   .option("-v, --verbose", "Show detailed executor output")
   .action(async (options) => {
     const cwd = process.cwd();
@@ -420,6 +421,7 @@ program
         handoffEntries: 0,
         commitCount: 0,
         claudeLogs: [],
+        expedite: options.expedite ? true : undefined,
       };
       const dash = startLiveDashboard(initialDashState, {
         onQuit: () => controller.abort(),
@@ -451,6 +453,7 @@ program
       onTaskFailure: dashRef
         ? (task) => dashRef!.promptTaskFailure(task)
         : undefined,
+      expedite: options.expedite as boolean | undefined,
     });
 
     const onSignal = () => {
