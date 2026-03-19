@@ -28,6 +28,7 @@ import {
   type PhaseResult,
 } from "./pipeline.js";
 import { RateLimiter } from "./rate-limiter.js";
+import { TaskManifest } from "./task-manifest.js";
 import { computeCodeMetrics } from "../metrics/code-metrics.js";
 import {
   getHeadSha,
@@ -74,6 +75,21 @@ export interface ClaudeResponse {
   sessionId?: string;
 }
 
+/** User's decision when a task fails repeatedly */
+export type TaskFailureAction =
+  | { action: "retry"; guidance: string }
+  | { action: "defer" }
+  | { action: "skip" }
+  | { action: "abort" };
+
+/** Callback invoked when a task reaches maxTaskFailures */
+export type OnTaskFailure = (task: {
+  id: string;
+  title: string;
+  failCount: number;
+  lastError: string | null;
+}) => Promise<TaskFailureAction>;
+
 /** Options for creating a LoopOrchestrator */
 export interface OrchestratorOptions {
   config: ForgeConfig;
@@ -86,6 +102,8 @@ export interface OrchestratorOptions {
   sessionId?: string;
   /** Extra context to prepend to agent system prompts (e.g. spec-kit context) */
   extraSystemContext?: string;
+  /** Callback for human-in-the-loop on task failure (if not set, auto-skips) */
+  onTaskFailure?: OnTaskFailure;
 }
 
 /** State snapshot for TUI dashboard updates */
@@ -159,6 +177,10 @@ export class LoopOrchestrator {
   private _costCurrentTask = 0;
   private _costPerPhase: Record<string, number> = {};
   private _executionCount = 0;
+  private _taskManifest: TaskManifest;
+  private _onTaskFailure?: OnTaskFailure;
+  private _taskGuidance = new Map<string, string>();
+  private _userAborted = false;
 
   constructor(options: OrchestratorOptions) {
     this._config = options.config;
@@ -188,6 +210,8 @@ export class LoopOrchestrator {
     this.taskGraph = new TaskGraph(options.tasks as TaskNode[]);
     this._handoffContext = new HandoffContext();
     this._teamComposer = TeamComposer.fromConfig(options.config.agents);
+    this._taskManifest = TaskManifest.load(this._projectRoot);
+    this._onTaskFailure = options.onTaskFailure;
 
     this.engine.setTotalTasks(options.tasks.length);
 
@@ -392,23 +416,24 @@ export class LoopOrchestrator {
       // Track per-task failures and skip after maxTaskFailures consecutive failures
       // Rate-limited failures are not the task's fault — don't count them
       if (!pipelineResult.completed && currentTask && !pipelineResult.rateLimited) {
-        const failCount = (this._taskFailureCounts.get(currentTask.id) ?? 0) + 1;
-        this._taskFailureCounts.set(currentTask.id, failCount);
-
-        if (failCount >= this._config.maxTaskFailures) {
+        // Timeouts skip immediately — a hanging test won't fix itself on retry
+        if (pipelineResult.timedOut) {
           this.taskGraph.markSkipped(currentTask.id);
           this.logAgent("system", "task-skipped",
-            `Skipping task after ${failCount} consecutive failures: ${currentTask.title}`);
+            `Skipping task after timeout (won't retry): ${currentTask.title}`);
+          this.logAgent("system", "timeout-diagnostics",
+            `Task "${currentTask.title}" timed out. The test command likely hangs — check if a device/emulator is required or increase timeoutMinutes.`);
           this._taskFailureCounts.delete(currentTask.id);
-
-          // Log timeout diagnostics if available
-          if (pipelineResult.error?.includes("timed out")) {
-            this.logAgent("system", "timeout-diagnostics",
-              `Task "${currentTask.title}" timed out ${failCount} times. Check log file for stderr/stdout details.`);
-          }
         } else {
-          this.logAgent("system", "task-retry",
-            `Failure ${failCount}/${this._config.maxTaskFailures} for: ${currentTask.title}`);
+          const failCount = (this._taskFailureCounts.get(currentTask.id) ?? 0) + 1;
+          this._taskFailureCounts.set(currentTask.id, failCount);
+
+          if (failCount >= this._config.maxTaskFailures) {
+            await this.handleTaskMaxFailures(currentTask, failCount, pipelineResult.error ?? null);
+          } else {
+            this.logAgent("system", "task-retry",
+              `Failure ${failCount}/${this._config.maxTaskFailures} for: ${currentTask.title}`);
+          }
         }
       } else if (pipelineResult.completed && currentTask) {
         // Reset failure count on success
@@ -420,6 +445,17 @@ export class LoopOrchestrator {
         pipelineResult.completed ? "completed" : "failed",
         pipelineResult.error ?? `${filesModified.length} files, ${commitsCreated} commits`
       );
+
+      // Record task-file mapping for commit reconstruction
+      if (currentTask && filesModified.length > 0) {
+        for (const phase of pipelineResult.tddPhasesCompleted) {
+          this._taskManifest.record(currentTask.id, currentTask.title, phase, filesModified);
+          if (commitsCreated > 0) {
+            this._taskManifest.markCommitted(currentTask.id, phase);
+          }
+        }
+        try { this._taskManifest.save(this._projectRoot); } catch { /* non-fatal */ }
+      }
     } catch (error) {
       const err =
         error instanceof Error ? error : new Error(String(error));
@@ -450,7 +486,9 @@ export class LoopOrchestrator {
     const timeout = this._config.timeoutMinutes * 60 * 1000;
     // Use a getter so session rotation is picked up mid-iteration
     const getSessionId = () => this._sessionId;
-    const taskContext = `Task: ${task.title}\nAcceptance criteria: ${(task as TaskNode & { acceptanceCriteria?: string[] }).acceptanceCriteria?.join(", ") ?? ""}`;
+    const guidance = this._taskGuidance.get(task.id);
+    const guidanceSection = guidance ? `\n\nUser guidance from previous failure:\n${guidance}` : "";
+    const taskContext = `Task: ${task.title}\nAcceptance criteria: ${(task as TaskNode & { acceptanceCriteria?: string[] }).acceptanceCriteria?.join(", ") ?? ""}${guidanceSection}`;
     const handoffSection = handoffPrompt ? `\n\n${handoffPrompt}` : "";
 
     // Unified TDD prompt and tools — stays constant across --continue calls
@@ -474,7 +512,7 @@ export class LoopOrchestrator {
         const { stderrHandler, streamHandler } = this.makeHandlers(AgentRole.Tester);
         // Start a fresh session for each task (don't reuse cross-task sessions)
         const response = await this.executeWithSessionRotation({
-          prompt: `[TDD RED PHASE] Write a failing test for:\n${taskContext}${handoffSection}\n\nWrite ONLY the test. Do NOT implement the feature yet.`,
+          prompt: `[TDD RED PHASE] Write a failing test for:\n${taskContext}${handoffSection}\n\nRULES:\n- Write ONLY tests that verify the acceptance criteria above\n- Test functional behavior (inputs, outputs, user interactions), NOT project structure or meta-checks\n- Write ONE test file with focused test cases — do not create multiple test files\n- Each test must fail because the feature code doesn't exist yet, not because of missing config\n- Do NOT implement the feature yet`,
           systemPrompt: tddSystemPrompt,
           allowedTools: tddTools,
           timeout,
@@ -489,11 +527,13 @@ export class LoopOrchestrator {
 
         if (response.testResults) {
           this.tddEnforcer.recordTestRun(response.testResults);
-          this.emitDashboardUpdate(); // Refresh TDD phase in dashboard
           if (response.testResults.failed > 0) {
             this._testFailures = response.testResults.failed;
           }
         }
+        // Ensure dashboard advances to Green even if test results weren't parseable
+        this.tddEnforcer.advanceToPhase(TddPhase.Green);
+        this.emitDashboardUpdate();
 
         allFilesModified.push(...response.filesModified);
         return {
@@ -526,11 +566,13 @@ export class LoopOrchestrator {
 
         if (response.testResults) {
           this.tddEnforcer.recordTestRun(response.testResults);
-          this.emitDashboardUpdate(); // Refresh TDD phase in dashboard
           if (response.testResults.failed > 0) {
             this._testFailures = response.testResults.failed;
           }
         }
+        // Ensure dashboard advances to Refactor even if test results weren't parseable
+        this.tddEnforcer.advanceToPhase(TddPhase.Refactor);
+        this.emitDashboardUpdate();
 
         // Log timeout diagnostics for visibility
         if (response.error?.includes("timed out") && response.rawStderr) {
@@ -671,13 +713,18 @@ export class LoopOrchestrator {
       executeCommit: async (_type: string, phase: TddPhase) => {
         this.logAgent("system", "commit", `${phase} phase`);
         const phaseImpl = await import("./phase-impl.js");
-        return phaseImpl.commitPhase(
+        const result = await phaseImpl.commitPhase(
           phase,
           allFilesModified,
           task.title,
           this._projectRoot,
           task.id
         );
+        if (!result.committed) {
+          this.logAgent("system", "commit-failed",
+            `Commit failed for ${phase} phase: ${result.message}`);
+        }
+        return result;
       },
     };
   }
@@ -686,7 +733,7 @@ export class LoopOrchestrator {
   async runLoop(signal?: AbortSignal): Promise<void> {
     this._signal = signal;
     while (!this.shouldStop()) {
-      if (signal?.aborted) {
+      if (signal?.aborted || this._userAborted) {
         break;
       }
       await this.runIteration();
@@ -702,6 +749,56 @@ export class LoopOrchestrator {
       return true;
     }
     return this.engine.shouldStop();
+  }
+
+  /**
+   * Handle a task that has reached maxTaskFailures.
+   * If onTaskFailure is set (interactive mode), prompt the user.
+   * Otherwise, skip permanently (headless fallback).
+   */
+  private async handleTaskMaxFailures(
+    task: TaskNode,
+    failCount: number,
+    lastError: string | null
+  ): Promise<void> {
+    if (this._onTaskFailure) {
+      const decision = await this._onTaskFailure({
+        id: task.id,
+        title: task.title,
+        failCount,
+        lastError,
+      });
+      switch (decision.action) {
+        case "retry":
+          this._taskGuidance.set(task.id, decision.guidance);
+          this._taskFailureCounts.set(task.id, 0);
+          this.logAgent("system", "task-retry-guided",
+            `User provided guidance for: ${task.title}`);
+          break;
+        case "defer":
+          this.taskGraph.markDeferred(task.id);
+          this._taskFailureCounts.delete(task.id);
+          this.logAgent("system", "task-deferred",
+            `Deferred to later: ${task.title}`);
+          break;
+        case "skip":
+          this.taskGraph.markSkipped(task.id);
+          this._taskFailureCounts.delete(task.id);
+          this.logAgent("system", "task-skipped",
+            `Permanently skipped: ${task.title}`);
+          break;
+        case "abort":
+          this._userAborted = true;
+          this.logAgent("system", "user-abort", "User aborted session");
+          break;
+      }
+    } else {
+      // Headless: auto-skip
+      this.taskGraph.markSkipped(task.id);
+      this.logAgent("system", "task-skipped",
+        `Skipping task after ${failCount} consecutive failures: ${task.title}`);
+      this._taskFailureCounts.delete(task.id);
+    }
   }
 
   /** Mark a task as complete */

@@ -7,6 +7,7 @@ export enum TaskStatus {
   Done = "done",
   Blocked = "blocked",
   Skipped = "skipped",
+  Deferred = "deferred",
 }
 
 /** Task priority levels */

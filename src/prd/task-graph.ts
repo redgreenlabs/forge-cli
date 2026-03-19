@@ -138,6 +138,7 @@ export class TaskGraph {
    */
   nextAvailable(): TaskNode[] {
     const available: TaskNode[] = [];
+    const deferred: TaskNode[] = [];
 
     for (const [, node] of this.nodes) {
       if (node.status === TaskStatus.Done || node.status === TaskStatus.Skipped) continue;
@@ -149,7 +150,11 @@ export class TaskGraph {
       });
 
       if (allDepsComplete) {
-        available.push(node);
+        if (node.status === TaskStatus.Deferred) {
+          deferred.push(node);
+        } else {
+          available.push(node);
+        }
       }
     }
 
@@ -162,15 +167,18 @@ export class TaskGraph {
     };
     const dependentCount = this.computeDependentCounts();
 
-    available.sort((a, b) => {
+    const sortFn = (a: TaskNode, b: TaskNode) => {
       const pa = priorityRank[a.priority] ?? 2;
       const pb = priorityRank[b.priority] ?? 2;
       if (pa !== pb) return pa - pb;
-      // More dependents = more foundational = should run first
       return (dependentCount.get(b.id) ?? 0) - (dependentCount.get(a.id) ?? 0);
-    });
+    };
 
-    return available;
+    available.sort(sortFn);
+    deferred.sort(sortFn);
+
+    // Non-deferred tasks first; fall back to deferred when none remain
+    return available.length > 0 ? available : deferred;
   }
 
   /** Count how many tasks (transitively) depend on each task */
@@ -206,9 +214,23 @@ export class TaskGraph {
     }
   }
 
+  /** Mark a task as deferred (skip for now, retry later at lower priority) */
+  markDeferred(taskId: string): void {
+    const node = this.nodes.get(taskId);
+    if (node) {
+      node.status = TaskStatus.Deferred;
+    }
+  }
+
   get skippedTasks(): number {
     return Array.from(this.nodes.values()).filter(
       (t) => t.status === TaskStatus.Skipped
+    ).length;
+  }
+
+  get deferredTasks(): number {
+    return Array.from(this.nodes.values()).filter(
+      (t) => t.status === TaskStatus.Deferred
     ).length;
   }
 }

@@ -160,6 +160,54 @@ describe("TddEnforcer", () => {
     });
   });
 
+  describe("advanceToPhase", () => {
+    it("should advance from Red to Green", () => {
+      const enforcer = new TddEnforcer();
+      enforcer.advanceToPhase(TddPhase.Green);
+      expect(enforcer.currentPhase).toBe(TddPhase.Green);
+    });
+
+    it("should advance from Red to Refactor (skipping Green)", () => {
+      const enforcer = new TddEnforcer();
+      enforcer.advanceToPhase(TddPhase.Refactor);
+      expect(enforcer.currentPhase).toBe(TddPhase.Refactor);
+    });
+
+    it("should not go backwards from Green to Red", () => {
+      const enforcer = new TddEnforcer();
+      enforcer.advanceToPhase(TddPhase.Green);
+      enforcer.advanceToPhase(TddPhase.Red);
+      expect(enforcer.currentPhase).toBe(TddPhase.Green);
+    });
+
+    it("should be a no-op if already at target phase", () => {
+      const enforcer = new TddEnforcer();
+      enforcer.advanceToPhase(TddPhase.Red);
+      expect(enforcer.currentPhase).toBe(TddPhase.Red);
+    });
+
+    it("should record skipped phases in cycle history", () => {
+      const enforcer = new TddEnforcer();
+      enforcer.advanceToPhase(TddPhase.Refactor);
+      enforcer.completeCycle();
+      const history = enforcer.cycleHistory;
+      expect(history[0]?.phases).toContain(TddPhase.Red);
+      expect(history[0]?.phases).toContain(TddPhase.Green);
+      expect(history[0]?.phases).toContain(TddPhase.Refactor);
+    });
+
+    it("should not duplicate phases already recorded by recordTestRun", () => {
+      const enforcer = new TddEnforcer();
+      enforcer.recordTestRun({ total: 1, passed: 0, failed: 1 }); // Red → Green
+      enforcer.advanceToPhase(TddPhase.Green); // Should be no-op (already there)
+      enforcer.advanceToPhase(TddPhase.Refactor);
+      enforcer.completeCycle();
+      const history = enforcer.cycleHistory;
+      // Red should appear exactly once
+      expect(history[0]?.phases.filter(p => p === TddPhase.Red)).toHaveLength(1);
+    });
+  });
+
   describe("serialization", () => {
     it("should serialize and restore state", () => {
       const enforcer = new TddEnforcer();

@@ -62,6 +62,8 @@ export interface PipelinePhaseResult {
   qualityReport?: PipelineResult;
   /** Whether the failure was caused by API rate limiting (should not count as task failure) */
   rateLimited?: boolean;
+  /** Whether the failure was caused by a process timeout (skip immediately, don't retry) */
+  timedOut?: boolean;
   /** Whether any phase produced an explicit EXIT_SIGNAL from Claude */
   exitSignal: boolean;
 }
@@ -325,6 +327,7 @@ export class IterationPipeline {
       gatesPassed: true,
       exitSignal: false,
       rateLimited: error.includes("rate limit") || error.includes("rate_limit"),
+      timedOut: error.includes("timed out") || error.includes("exit code 143"),
     };
   }
 }

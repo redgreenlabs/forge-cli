@@ -104,6 +104,28 @@ export class TddEnforcer {
     }
   }
 
+  /**
+   * Force-advance to the next TDD phase.
+   * Used when a phase completes successfully but test results weren't parseable,
+   * so recordTestRun() couldn't detect the transition.
+   */
+  advanceToPhase(phase: TddPhase): void {
+    if (phase === this._phase) return; // Already there
+    // Only allow forward transitions within a cycle
+    const order = [TddPhase.Red, TddPhase.Green, TddPhase.Refactor];
+    const currentIdx = order.indexOf(this._phase);
+    const targetIdx = order.indexOf(phase);
+    if (targetIdx > currentIdx) {
+      // Record the phases we're skipping past
+      for (let i = currentIdx; i < targetIdx; i++) {
+        if (!this._currentCyclePhases.includes(order[i]!)) {
+          this._currentCyclePhases.push(order[i]!);
+        }
+      }
+      this._phase = phase;
+    }
+  }
+
   /** Complete the current TDD cycle and start a new one */
   completeCycle(): void {
     this._currentCyclePhases.push(TddPhase.Refactor);

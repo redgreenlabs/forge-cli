@@ -4,7 +4,7 @@ import { LoopPhase } from "../loop/engine.js";
 import { CircuitBreakerState } from "../loop/circuit-breaker.js";
 import { TddPhase } from "../tdd/enforcer.js";
 import { GateStatus } from "../gates/quality-gates.js";
-import type { DashboardState } from "../loop/orchestrator.js";
+import type { DashboardState, TaskFailureAction } from "../loop/orchestrator.js";
 import type { PipelineResult, GateResult } from "../gates/quality-gates.js";
 import type { CodeQualityMetrics, CoverageMetrics, SecurityMetrics, CostMetrics } from "../tui/renderer.js";
 
@@ -542,9 +542,111 @@ function GateFailureBanner({ report }: { report: PipelineResult }) {
   );
 }
 
+// ── Task Failure Modal ────────────────────────────────────────────
+
+interface TaskFailureInfo {
+  id: string;
+  title: string;
+  failCount: number;
+  lastError: string | null;
+}
+
+function TaskFailureModal({ task, onDecision }: {
+  task: TaskFailureInfo;
+  onDecision: (action: TaskFailureAction) => void;
+}) {
+  const [selected, setSelected] = useState(0);
+  const [guidance, setGuidance] = useState("");
+  const [inputMode, setInputMode] = useState(false);
+
+  const options = [
+    { label: "Retry with guidance", desc: "provide a hint to help" },
+    { label: "Skip for now", desc: "defer to later" },
+    { label: "Skip permanently", desc: "won't retry" },
+    { label: "Abort session", desc: "stop forge" },
+  ];
+
+  useInput((input, key) => {
+    if (inputMode) {
+      if (key.return) {
+        onDecision({ action: "retry", guidance });
+        return;
+      }
+      if (key.escape) { setInputMode(false); return; }
+      if (key.backspace || key.delete) {
+        setGuidance((g) => g.slice(0, -1));
+      } else if (input && !key.ctrl && !key.meta) {
+        setGuidance((g) => g + input);
+      }
+      return;
+    }
+
+    if (key.upArrow) setSelected((s) => Math.max(0, s - 1));
+    if (key.downArrow) setSelected((s) => Math.min(options.length - 1, s + 1));
+    if (key.return) {
+      if (selected === 0) setInputMode(true);
+      else if (selected === 1) onDecision({ action: "defer" });
+      else if (selected === 2) onDecision({ action: "skip" });
+      else if (selected === 3) onDecision({ action: "abort" });
+    }
+  });
+
+  const errorPreview = task.lastError
+    ? task.lastError.slice(0, 120) + (task.lastError.length > 120 ? "..." : "")
+    : "Unknown error";
+
+  return (
+    <Box
+      borderStyle="single"
+      borderColor="yellow"
+      flexDirection="column"
+      flexGrow={1}
+      paddingX={2}
+      paddingY={1}
+    >
+      <Text bold color="yellow">Task Failed ({task.failCount}x)</Text>
+      <Text> </Text>
+      <Text color="white" bold>{task.title}</Text>
+      <Text color="red">{errorPreview}</Text>
+      <Text> </Text>
+
+      {inputMode ? (
+        <Box flexDirection="column">
+          <Text color="cyan">Enter guidance (Enter to submit, Esc to cancel):</Text>
+          <Box>
+            <Text color="green">&gt; </Text>
+            <Text>{guidance}<Text color="gray">_</Text></Text>
+          </Box>
+        </Box>
+      ) : (
+        <Box flexDirection="column">
+          <Text color="gray">What would you like to do?</Text>
+          <Text> </Text>
+          {options.map((opt, i) => (
+            <Box key={opt.label}>
+              <Text color={i === selected ? "cyan" : "gray"}>
+                {i === selected ? "▸ " : "  "}{opt.label}
+              </Text>
+              <Text color="gray"> — {opt.desc}</Text>
+            </Box>
+          ))}
+          <Text> </Text>
+          <Text color="gray">Use ↑↓ arrows and Enter to select</Text>
+        </Box>
+      )}
+    </Box>
+  );
+}
+
 // ── Root Dashboard Component ───────────────────────────────────────
 
-function Dashboard({ state, startedAt, onQuit }: { state: DashboardState; startedAt: number; onQuit?: () => void }) {
+function Dashboard({ state, startedAt, onQuit, taskFailure, onTaskFailureDecision }: {
+  state: DashboardState;
+  startedAt: number;
+  onQuit?: () => void;
+  taskFailure?: TaskFailureInfo | null;
+  onTaskFailureDecision?: (action: TaskFailureAction) => void;
+}) {
   const { width: termWidth, height: termHeight } = useTerminalSize();
   const [tick, setTick] = useState(0);
   const [showOverlay, setShowOverlay] = useState(false);
@@ -556,6 +658,9 @@ function Dashboard({ state, startedAt, onQuit }: { state: DashboardState; starte
   }, []);
 
   useInput((input) => {
+    // When task failure modal is active, it handles its own input
+    if (taskFailure) return;
+
     if (confirmQuit) {
       if (input === "y" || input === "Y") {
         setConfirmQuit(false);
@@ -582,8 +687,10 @@ function Dashboard({ state, startedAt, onQuit }: { state: DashboardState; starte
         <GateFailureBanner report={state.qualityReport} />
       )}
 
-      {/* Main content: rate limit modal, overlay, or Claude output */}
-      {state.rateLimitWaiting ? (
+      {/* Main content: task failure modal, rate limit modal, overlay, or Claude output */}
+      {taskFailure && onTaskFailureDecision ? (
+        <TaskFailureModal task={taskFailure} onDecision={onTaskFailureDecision} />
+      ) : state.rateLimitWaiting ? (
         <RateLimitModal until={state.rateLimitWaiting.until} />
       ) : showOverlay ? (
         <DashboardOverlay state={state} />
@@ -622,22 +729,48 @@ export type DashboardUpdater = (state: DashboardState) => void;
 export function startLiveDashboard(
   initialState: DashboardState,
   options?: { onQuit?: () => void }
-): { updater: DashboardUpdater; cleanup: () => void } {
+): {
+  updater: DashboardUpdater;
+  cleanup: () => void;
+  promptTaskFailure: (task: { id: string; title: string; failCount: number; lastError: string | null }) => Promise<TaskFailureAction>;
+} {
   let setExternalState: ((s: DashboardState) => void) | null = null;
+  let setExternalTaskFailure: ((task: TaskFailureInfo | null) => void) | null = null;
+  let setExternalDecisionHandler: ((handler: ((action: TaskFailureAction) => void) | null) => void) | null = null;
   const startedAt = Date.now();
   const onQuit = options?.onQuit;
 
   function LiveWrapper() {
     const [dashState, setDashState] = useState(initialState);
+    const [taskFailure, setTaskFailure] = useState<TaskFailureInfo | null>(null);
+    const [decisionHandler, setDecisionHandler] = useState<((action: TaskFailureAction) => void) | null>(null);
 
     useEffect(() => {
       setExternalState = setDashState;
+      setExternalTaskFailure = setTaskFailure;
+      setExternalDecisionHandler = (handler) => setDecisionHandler(() => handler);
       return () => {
         setExternalState = null;
+        setExternalTaskFailure = null;
+        setExternalDecisionHandler = null;
       };
     }, []);
 
-    return <Dashboard state={dashState} startedAt={startedAt} onQuit={onQuit} />;
+    const handleDecision = (action: TaskFailureAction) => {
+      if (decisionHandler) decisionHandler(action);
+      setTaskFailure(null);
+      setDecisionHandler(null);
+    };
+
+    return (
+      <Dashboard
+        state={dashState}
+        startedAt={startedAt}
+        onQuit={onQuit}
+        taskFailure={taskFailure}
+        onTaskFailureDecision={handleDecision}
+      />
+    );
   }
 
   // Enter alternate screen buffer
@@ -654,6 +787,12 @@ export function startLiveDashboard(
       clear();
       unmount();
       process.stdout.write("\x1b[?1049l");
+    },
+    promptTaskFailure: (task) => {
+      return new Promise<TaskFailureAction>((resolve) => {
+        if (setExternalTaskFailure) setExternalTaskFailure(task);
+        if (setExternalDecisionHandler) setExternalDecisionHandler(resolve);
+      });
     },
   };
 }

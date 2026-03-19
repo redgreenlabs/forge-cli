@@ -2,7 +2,7 @@ import { appendFileSync, mkdirSync, existsSync, readFileSync, writeFileSync } fr
 import { join } from "path";
 import type { ForgeConfig } from "../config/schema.js";
 import type { PrdTask } from "../prd/parser.js";
-import type { ClaudeExecutor, DashboardState } from "./orchestrator.js";
+import type { ClaudeExecutor, DashboardState, OnTaskFailure } from "./orchestrator.js";
 import { LoopOrchestrator } from "./orchestrator.js";
 import { ContextFileManager } from "../agents/context-file.js";
 import type { AgentLogEntry } from "../tui/renderer.js";
@@ -20,6 +20,8 @@ export interface LoopRunnerOptions {
   onDashboardUpdate?: (state: DashboardState) => void;
   /** Extra context to prepend to agent system prompts (e.g. spec-kit context) */
   extraSystemContext?: string;
+  /** Callback for human-in-the-loop on task failure (if not set, auto-skips) */
+  onTaskFailure?: OnTaskFailure;
 }
 
 /** Result of a complete loop run */
@@ -65,6 +67,7 @@ export class LoopRunner {
       sessionId: options.sessionId,
       onDashboardUpdate: options.onDashboardUpdate ?? (() => {}),
       extraSystemContext: options.extraSystemContext,
+      onTaskFailure: options.onTaskFailure,
     });
 
     this.resume = options.resume ?? false;

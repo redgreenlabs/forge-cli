@@ -294,4 +294,44 @@ describe("TaskGraph", () => {
       expect(next.map((t) => t.id)).toEqual(["a", "b"]);
     });
   });
+
+  describe("deferred tasks", () => {
+    it("should mark a task as deferred", () => {
+      const graph = new TaskGraph([makeTask("a"), makeTask("b")]);
+      graph.markDeferred("a");
+      expect(graph.deferredTasks).toBe(1);
+    });
+
+    it("should deprioritize deferred tasks behind pending ones", () => {
+      const graph = new TaskGraph([makeTask("a"), makeTask("b"), makeTask("c")]);
+      graph.markDeferred("a");
+      const next = graph.nextAvailable();
+      // Deferred "a" should not appear when pending tasks exist
+      expect(next.map((t) => t.id)).toEqual(["b", "c"]);
+    });
+
+    it("should return deferred tasks when no pending tasks remain", () => {
+      const graph = new TaskGraph([makeTask("a"), makeTask("b")]);
+      graph.markDeferred("a");
+      graph.markComplete("b");
+      const next = graph.nextAvailable();
+      expect(next.map((t) => t.id)).toEqual(["a"]);
+    });
+
+    it("should not count deferred tasks as skipped", () => {
+      const graph = new TaskGraph([makeTask("a"), makeTask("b")]);
+      graph.markDeferred("a");
+      expect(graph.skippedTasks).toBe(0);
+      expect(graph.deferredTasks).toBe(1);
+      expect(graph.remainingTasks).toBe(2);
+    });
+
+    it("should treat deferred dependencies as incomplete", () => {
+      const graph = new TaskGraph([makeTask("a"), makeTask("b", ["a"])]);
+      graph.markDeferred("a");
+      const next = graph.nextAvailable();
+      // Only "a" is available (deferred); "b" is blocked by "a"
+      expect(next.map((t) => t.id)).toEqual(["a"]);
+    });
+  });
 });
