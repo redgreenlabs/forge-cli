@@ -17,6 +17,8 @@ You describe what to build. Forge builds it — test-first, secure, and document
 - **Auto Task Decomposition** — Large complex tasks are automatically split into TDD-friendly subtasks
 - **Session Continuity** — Unified TDD prompt preserves Claude's context across Red/Green/Refactor phases. Resume loops across restarts with persistent state.
 - **Spec-Kit Integration** — Use [GitHub's spec-kit](https://github.com/github/spec-kit) for planning, Forge for execution
+- **Human-in-the-Loop** — When a task fails repeatedly, Forge pauses and prompts you: retry with guidance, defer to later, skip permanently, or abort. Your guidance is injected into the next attempt.
+- **Deferred Tasks** — Skip a task for now and come back to it later. Deferred tasks run after all other pending work completes.
 - **Circuit Breaker** — Stagnation detection with auto-recovery (Nygard pattern)
 - **Stream Output** — Real-time structured JSON streaming from Claude CLI for live TUI feedback
 
@@ -203,6 +205,34 @@ The live dashboard shows real-time progress:
 ```
 
 Press `d` to toggle the dashboard overlay with cost breakdown, coverage, security findings, and code quality metrics.
+
+### Human-in-the-Loop
+
+When a task fails `maxTaskFailures` times (default 3), Forge pauses and shows an interactive prompt:
+
+```
+╭─ Task Failed (3x) ──────────────────────────────────────╮
+│                                                          │
+│ Automated UI tests (integration_test package)            │
+│ Green phase failed: Process timed out (exit code 143)    │
+│                                                          │
+│ What would you like to do?                               │
+│                                                          │
+│ ▸ Retry with guidance — provide a hint to help           │
+│   Skip for now — defer to later                          │
+│   Skip permanently — won't retry                         │
+│   Abort session — stop forge                             │
+│                                                          │
+│ Use ↑↓ arrows and Enter to select                        │
+╰──────────────────────────────────────────────────────────╯
+```
+
+- **Retry with guidance**: Type a hint (e.g., "Use widget tests instead of integration tests"). Your guidance is injected into the next attempt's prompt.
+- **Skip for now (defer)**: The task moves to the back of the queue. Other tasks run first, then it retries with a fresh failure count.
+- **Skip permanently**: The task won't be retried (current default behavior).
+- **Abort session**: Stops Forge immediately.
+
+In non-interactive mode (`--no-tui`), tasks are auto-skipped after `maxTaskFailures` (no prompt shown).
 
 ## Configuration
 
