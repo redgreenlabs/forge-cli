@@ -937,13 +937,23 @@ export class LoopOrchestrator {
 
   /** Wait with periodic dashboard updates for countdown display */
   private async waitWithCountdown(totalMs: number): Promise<void> {
-    const intervalMs = 10_000;
+    const intervalMs = 1_000; // Check abort signal every second for responsive quit
     let remaining = totalMs;
+    let dashboardTick = 0;
     while (remaining > 0) {
+      if (this._signal?.aborted || this._userAborted) {
+        this._rateLimitWaiting = undefined;
+        this.emitDashboardUpdate();
+        return;
+      }
       const sleepTime = Math.min(intervalMs, remaining);
       await new Promise((resolve) => setTimeout(resolve, sleepTime));
       remaining -= sleepTime;
-      this.emitDashboardUpdate();
+      dashboardTick++;
+      // Update dashboard every 10 ticks (10s) to avoid excessive re-renders
+      if (dashboardTick % 10 === 0) {
+        this.emitDashboardUpdate();
+      }
     }
   }
 
