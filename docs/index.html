@@ -894,6 +894,16 @@
           <p>Resume interrupted runs. Task completion persists to disk. Context-exhausted sessions rotate automatically. Pick up where you left off.</p>
         </div>
         <div class="feature-card">
+          <div class="feature-icon">&#x1F9D1;&#x200D;&#x1F4BB;</div>
+          <h3>Human-in-the-Loop</h3>
+          <p>Task stuck? Forge pauses and asks you: retry with guidance, defer to later, skip, or abort. Your hint is injected into the next attempt.</p>
+        </div>
+        <div class="feature-card">
+          <div class="feature-icon">&#x23ED;</div>
+          <h3>Deferred Tasks</h3>
+          <p>Skip a task for now, work on others, come back later. Deferred tasks deprioritize behind pending work and retry with a fresh count.</p>
+        </div>
+        <div class="feature-card">
           <div class="feature-icon">&#x1F4D0;</div>
           <h3>Spec-Kit Integration</h3>
           <p>Use GitHub's spec-kit for planning (specify, plan, tasks), Forge for execution. Best of both worlds.</p>
@@ -1246,6 +1256,33 @@
 <span class="tui-yellow">└──────────────────────────────────────┘</span>
             </div>
             <p>Forge waits for the exact reset time from the API and resumes automatically. Rate limits don't count as task failures.</p>
+
+            <h4>Human-in-the-Loop</h4>
+            <p>When a task fails <code>maxTaskFailures</code> times (default 3), Forge pauses and shows an interactive prompt:</p>
+            <div class="tui-mockup" style="text-align: center;">
+<span class="tui-yellow">┌──────────────────────────────────────────────┐</span>
+<span class="tui-yellow">│</span> <span class="tui-bold" style="color: var(--yellow);">Task Failed (3x)</span>                              <span class="tui-yellow">│</span>
+<span class="tui-yellow">│</span>                                                <span class="tui-yellow">│</span>
+<span class="tui-yellow">│</span> <span class="tui-white tui-bold">Automated UI tests (integration_test)</span>        <span class="tui-yellow">│</span>
+<span class="tui-yellow">│</span> <span class="tui-red">Green phase failed: Process timed out</span>         <span class="tui-yellow">│</span>
+<span class="tui-yellow">│</span>                                                <span class="tui-yellow">│</span>
+<span class="tui-yellow">│</span> <span class="tui-gray">What would you like to do?</span>                    <span class="tui-yellow">│</span>
+<span class="tui-yellow">│</span>                                                <span class="tui-yellow">│</span>
+<span class="tui-yellow">│</span> <span class="tui-cyan">&#x25B8; Retry with guidance</span> <span class="tui-gray">— provide a hint</span>       <span class="tui-yellow">│</span>
+<span class="tui-yellow">│</span> <span class="tui-gray">  Skip for now — defer to later</span>               <span class="tui-yellow">│</span>
+<span class="tui-yellow">│</span> <span class="tui-gray">  Skip permanently — won't retry</span>              <span class="tui-yellow">│</span>
+<span class="tui-yellow">│</span> <span class="tui-gray">  Abort session — stop forge</span>                  <span class="tui-yellow">│</span>
+<span class="tui-yellow">│</span>                                                <span class="tui-yellow">│</span>
+<span class="tui-yellow">│</span> <span class="tui-gray">Use &#x2191;&#x2193; arrows and Enter to select</span>           <span class="tui-yellow">│</span>
+<span class="tui-yellow">└──────────────────────────────────────────────┘</span>
+            </div>
+            <ul>
+              <li><strong>Retry with guidance</strong> — Type a hint (e.g., "Use widget tests, not integration tests"). Your guidance is injected into the next attempt's prompt.</li>
+              <li><strong>Skip for now (defer)</strong> — The task moves to the back of the queue. Other tasks run first, then it retries with a fresh failure count.</li>
+              <li><strong>Skip permanently</strong> — The task is marked as skipped and won't be retried.</li>
+              <li><strong>Abort session</strong> — Stops Forge immediately.</li>
+            </ul>
+            <p>In non-interactive mode (<code>--no-tui</code>), tasks are auto-skipped after <code>maxTaskFailures</code>.</p>
           </section>
 
           <!-- Configuration -->
