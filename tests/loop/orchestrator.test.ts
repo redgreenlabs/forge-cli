@@ -603,4 +603,151 @@ describe("LoopOrchestrator", () => {
       expect(orch.state.iteration).toBe(1);
     });
   });
+
+  describe("onTaskFailure callback", () => {
+    it("should call onTaskFailure when task reaches maxTaskFailures", async () => {
+      const onTaskFailure = vi.fn().mockResolvedValue({ action: "skip" });
+      const failExecutor: ClaudeExecutor = {
+        execute: vi.fn().mockResolvedValue(makeClaudeResponse({
+          status: "error",
+          exitSignal: false,
+          filesModified: [],
+          testsPass: false,
+          testResults: { total: 1, passed: 0, failed: 1 },
+          error: "Tests failed",
+        })),
+      };
+
+      const orch = createOrchestrator({
+        executor: failExecutor,
+        config: { ...defaultConfig, maxIterations: 10, maxTaskFailures: 2, exitSignalThreshold: 999 },
+        onTaskFailure,
+      });
+
+      // Run enough iterations to hit maxTaskFailures (2)
+      await orch.runIteration(); // fail 1
+      await orch.runIteration(); // fail 2 → triggers callback
+
+      expect(onTaskFailure).toHaveBeenCalledTimes(1);
+      expect(onTaskFailure).toHaveBeenCalledWith(expect.objectContaining({
+        title: "Implement feature",
+        failCount: 2,
+      }));
+    });
+
+    it("should defer task when user chooses defer", async () => {
+      const onTaskFailure = vi.fn().mockResolvedValue({ action: "defer" });
+      const failExecutor: ClaudeExecutor = {
+        execute: vi.fn().mockResolvedValue(makeClaudeResponse({
+          status: "error",
+          exitSignal: false,
+          filesModified: [],
+          testsPass: false,
+          testResults: { total: 1, passed: 0, failed: 1 },
+          error: "Tests failed",
+        })),
+      };
+
+      const orch = createOrchestrator({
+        executor: failExecutor,
+        config: { ...defaultConfig, maxIterations: 10, maxTaskFailures: 1, exitSignalThreshold: 999 },
+        onTaskFailure,
+      });
+
+      await orch.runIteration(); // fail → triggers callback → defer
+
+      // Verify the task was deferred (not skipped)
+      const log = orch.agentLog;
+      expect(log.some((e: { action: string }) => e.action === "task-deferred")).toBe(true);
+    });
+
+    it("should abort session when user chooses abort", async () => {
+      const onTaskFailure = vi.fn().mockResolvedValue({ action: "abort" });
+      const failExecutor: ClaudeExecutor = {
+        execute: vi.fn().mockResolvedValue(makeClaudeResponse({
+          status: "error",
+          exitSignal: false,
+          filesModified: [],
+          testsPass: false,
+          testResults: { total: 1, passed: 0, failed: 1 },
+          error: "Tests failed",
+        })),
+      };
+
+      const orch = createOrchestrator({
+        executor: failExecutor,
+        config: { ...defaultConfig, maxIterations: 10, maxTaskFailures: 1, exitSignalThreshold: 999 },
+        onTaskFailure,
+      });
+
+      await orch.runIteration(); // fail → abort
+      await orch.runLoop(); // should stop immediately
+
+      const log = orch.agentLog;
+      expect(log.some((e: { action: string }) => e.action === "user-abort")).toBe(true);
+    });
+
+    it("should auto-skip when no onTaskFailure callback is set", async () => {
+      const failExecutor: ClaudeExecutor = {
+        execute: vi.fn().mockResolvedValue(makeClaudeResponse({
+          status: "error",
+          exitSignal: false,
+          filesModified: [],
+          testsPass: false,
+          testResults: { total: 1, passed: 0, failed: 1 },
+          error: "Tests failed",
+        })),
+      };
+
+      const orch = createOrchestrator({
+        executor: failExecutor,
+        config: { ...defaultConfig, maxIterations: 10, maxTaskFailures: 1, exitSignalThreshold: 999 },
+        // No onTaskFailure — headless mode
+      });
+
+      await orch.runIteration(); // fail → auto-skip
+
+      const log = orch.agentLog;
+      expect(log.some((e: { action: string }) => e.action === "task-skipped")).toBe(true);
+    });
+
+    it("should prepend user guidance to task context on retry", async () => {
+      let callCount = 0;
+      const failExecutor: ClaudeExecutor = {
+        execute: vi.fn().mockImplementation(async (opts: { prompt: string }) => {
+          callCount++;
+          // First 2 calls fail (TDD pipeline calls executor multiple times)
+          // After guidance, check that the prompt includes guidance
+          if (callCount > 4 && opts.prompt.includes("Use the FooBar library")) {
+            return makeClaudeResponse(); // success with guidance
+          }
+          return makeClaudeResponse({
+            status: "error",
+            exitSignal: false,
+            filesModified: [],
+            testsPass: false,
+            testResults: { total: 1, passed: 0, failed: 1 },
+            error: "Tests failed",
+          });
+        }),
+      };
+
+      const onTaskFailure = vi.fn().mockResolvedValue({
+        action: "retry",
+        guidance: "Use the FooBar library",
+      });
+
+      const orch = createOrchestrator({
+        executor: failExecutor,
+        config: { ...defaultConfig, maxIterations: 10, maxTaskFailures: 1, exitSignalThreshold: 999 },
+        onTaskFailure,
+      });
+
+      await orch.runIteration(); // fail → retry with guidance
+      await orch.runIteration(); // retries — executor checks for guidance in prompt
+
+      const log = orch.agentLog;
+      expect(log.some((e: { action: string }) => e.action === "task-retry-guided")).toBe(true);
+    });
+  });
 });

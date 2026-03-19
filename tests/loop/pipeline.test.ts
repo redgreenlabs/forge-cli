@@ -470,4 +470,51 @@ describe("Iteration Pipeline", () => {
       expect(result.rateLimited).toBeUndefined();
     });
   });
+
+  describe("timeout detection", () => {
+    it("should set timedOut flag when error contains 'timed out'", async () => {
+      executor.executeGreenPhase = vi.fn().mockResolvedValue({
+        filesModified: [],
+        testsPass: false,
+        testResults: { total: 0, passed: 0, failed: 0 },
+        error: "Process timed out (exit code 143) — consider increasing timeoutMinutes",
+      });
+
+      const pipeline = createPipeline({ tddEnabled: false });
+      const result = await pipeline.execute(executor, onPhaseChange);
+
+      expect(result.completed).toBe(false);
+      expect(result.timedOut).toBe(true);
+    });
+
+    it("should set timedOut flag when error contains 'exit code 143'", async () => {
+      executor.executeRedPhase = vi.fn().mockResolvedValue({
+        filesModified: [],
+        testsPass: false,
+        testResults: { total: 0, passed: 0, failed: 0 },
+        error: "Process killed with exit code 143",
+      });
+
+      const pipeline = createPipeline({ tddEnabled: true });
+      const result = await pipeline.execute(executor, onPhaseChange);
+
+      expect(result.completed).toBe(false);
+      expect(result.timedOut).toBe(true);
+    });
+
+    it("should not set timedOut for non-timeout errors", async () => {
+      executor.executeGreenPhase = vi.fn().mockResolvedValue({
+        filesModified: [],
+        testsPass: false,
+        testResults: { total: 0, passed: 0, failed: 0 },
+        error: "Compilation failed",
+      });
+
+      const pipeline = createPipeline({ tddEnabled: false });
+      const result = await pipeline.execute(executor, onPhaseChange);
+
+      expect(result.completed).toBe(false);
+      expect(result.timedOut).toBeFalsy();
+    });
+  });
 });

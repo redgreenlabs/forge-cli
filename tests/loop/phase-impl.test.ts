@@ -314,4 +314,60 @@ describe("commitPhase", () => {
     expect(result.committed).toBe(false);
     expect(result.message).toBe("No source files changed");
   });
+
+  it("should not include pre-staged files unrelated to current iteration", async () => {
+    // Create initial commit
+    writeFileSync(join(tmpDir, "README.md"), "# test");
+    execSync("git add -A && git commit -m 'init'", { cwd: tmpDir, stdio: "pipe" });
+
+    // Pre-stage a file (simulating user's prior staged changes)
+    writeFileSync(join(tmpDir, "unrelated.txt"), "pre-staged");
+    execSync("git add unrelated.txt", { cwd: tmpDir, stdio: "pipe" });
+
+    // Now create a file from the current iteration
+    mkdirSync(join(tmpDir, "src"), { recursive: true });
+    writeFileSync(join(tmpDir, "src/new.ts"), "export const x = 1;");
+
+    const result = await commitPhase(
+      TddPhase.Green,
+      ["src/new.ts"],
+      "Add new module",
+      tmpDir
+    );
+
+    expect(result.committed).toBe(true);
+
+    // The pre-staged file should still be staged (not committed)
+    const status = execSync("git status --porcelain", {
+      cwd: tmpDir,
+      encoding: "utf-8",
+    });
+    expect(status).toContain("unrelated.txt");
+  });
+
+  it("should exclude build artifacts and .forge/ files", async () => {
+    mkdirSync(join(tmpDir, "build"), { recursive: true });
+    mkdirSync(join(tmpDir, ".forge"), { recursive: true });
+    mkdirSync(join(tmpDir, "src"), { recursive: true });
+    writeFileSync(join(tmpDir, "build/output.js"), "compiled");
+    writeFileSync(join(tmpDir, ".forge/state.json"), "{}");
+    writeFileSync(join(tmpDir, "src/app.ts"), "export const app = true;");
+
+    const result = await commitPhase(
+      TddPhase.Green,
+      ["src/app.ts"],
+      "Add app",
+      tmpDir
+    );
+
+    expect(result.committed).toBe(true);
+
+    // build/ and .forge/ should still be untracked
+    const status = execSync("git status --porcelain -u", {
+      cwd: tmpDir,
+      encoding: "utf-8",
+    });
+    expect(status).toContain("build/");
+    expect(status).toContain(".forge/");
+  });
 });

@@ -396,6 +396,7 @@ program
     // Start live TUI dashboard if enabled
     let inkUpdater: ((state: import("./loop/orchestrator.js").DashboardState) => void) | null = null;
     let inkCleanup: (() => void) | null = null;
+    let dashRef: { promptTaskFailure: (task: { id: string; title: string; failCount: number; lastError: string | null }) => Promise<import("./loop/orchestrator.js").TaskFailureAction> } | null = null;
 
     if (useTui) {
       const { startLiveDashboard } = await import("./tui/live-dashboard.js");
@@ -425,6 +426,7 @@ program
       });
       inkUpdater = dash.updater;
       inkCleanup = dash.cleanup;
+      dashRef = dash;
     }
 
     // Create runner
@@ -446,6 +448,9 @@ program
           // (verbose mode logs its own output, no need for full dashboard rerender)
         }
       },
+      onTaskFailure: dashRef
+        ? (task) => dashRef!.promptTaskFailure(task)
+        : undefined,
     });
 
     const onSignal = () => {

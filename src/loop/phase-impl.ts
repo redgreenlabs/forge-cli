@@ -95,34 +95,87 @@ export async function commitPhase(
   try {
     const { execSync } = await import("child_process");
 
-    // Get all changed/untracked files via git status, excluding forge internals.
-    // Always check git status even if `files` is empty — Claude may have modified
-    // files that weren't tracked by the executor (e.g. when --output-format json
-    // doesn't include tool_use entries).
+    // Get unstaged and untracked files only (not pre-staged changes).
+    // We look for:
+    //   " M file" (unstaged modification, leading space = not staged)
+    //   "?? file" (untracked)
+    //   " D file" (unstaged deletion)
+    // We skip already-staged files (e.g. "M  file", "D  file", "A  file")
+    // to avoid committing unrelated pre-existing staged changes.
     const statusOutput = execSync("git status --porcelain -u", {
       cwd: projectRoot,
       encoding: "utf-8",
       stdio: ["pipe", "pipe", "pipe"],
     });
 
-    const changedFiles = statusOutput
-      .split("\n")
-      .filter((line) => line.trim().length > 0)
-      .map((line) => line.slice(3).trim())
-      .filter((f) => f.length > 0)
-      // Exclude forge internals and common non-source paths
-      .filter((f) => !f.startsWith(".forge/") && !f.startsWith("node_modules/"));
+    const EXCLUDE_PREFIXES = [".forge/", "node_modules/", "build/", ".dart_tool/"];
+    const isExcluded = (f: string) => EXCLUDE_PREFIXES.some((p) => f.startsWith(p));
+
+    const changedFiles: string[] = [];
+    for (const line of statusOutput.split("\n")) {
+      if (line.length < 4) continue;
+      const indexStatus = line[0];  // staged status
+      const workStatus = line[1];   // unstaged status
+      const filePath = line.slice(3).trim();
+      if (!filePath || isExcluded(filePath)) continue;
+
+      // Include unstaged changes and untracked files
+      if (workStatus === "M" || workStatus === "D" || indexStatus === "?") {
+        changedFiles.push(filePath);
+      }
+      // Also include files from the executor's list that are already staged
+      // (these are files Claude modified in this iteration)
+      else if (
+        (indexStatus === "M" || indexStatus === "A" || indexStatus === "D") &&
+        files.some((f) => filePath === f || filePath.endsWith(f) || f.endsWith(filePath))
+      ) {
+        changedFiles.push(filePath);
+      }
+    }
 
     if (changedFiles.length === 0) {
       return { committed: false, message: "No source files changed" };
     }
 
-    // Stage only source files (not .forge/ or node_modules/)
+    // Save list of currently staged files so we can restore them after our commit.
+    // This prevents us from accidentally committing pre-existing staged changes.
+    const preStagedOutput = execSync("git diff --cached --name-only", {
+      cwd: projectRoot,
+      encoding: "utf-8",
+      stdio: ["pipe", "pipe", "pipe"],
+    });
+    const preStagedFiles = preStagedOutput.split("\n").filter((f) => f.trim().length > 0);
+
+    // Unstage any pre-existing staged files to isolate our commit
+    if (preStagedFiles.length > 0) {
+      try {
+        execSync("git reset HEAD -- .", { cwd: projectRoot, stdio: "pipe" });
+      } catch {
+        // reset may fail on initial commit (no HEAD) — ignore
+      }
+    }
+
+    // Stage only the files from this iteration
+    let stagedCount = 0;
     for (const file of changedFiles) {
-      execSync(`git add -- ${escapeShellArg(file)}`, {
-        cwd: projectRoot,
-        stdio: "pipe",
-      });
+      try {
+        execSync(`git add -- ${escapeShellArg(file)}`, {
+          cwd: projectRoot,
+          stdio: "pipe",
+        });
+        stagedCount++;
+      } catch {
+        // Skip files that can't be staged (deleted externally, permission issues)
+        continue;
+      }
+    }
+
+    if (stagedCount === 0) {
+      // Re-stage pre-existing files before returning
+      for (const f of preStagedFiles) {
+        try { execSync(`git add -- ${escapeShellArg(f)}`, { cwd: projectRoot, stdio: "pipe" }); } catch { /* skip */ }
+      }
+      return { committed: false, message: "No files could be staged" };
     }
 
     // Commit with the planned message
@@ -131,9 +184,16 @@ export async function commitPhase(
       stdio: "pipe",
     });
 
+    // Restore pre-existing staged files
+    for (const f of preStagedFiles) {
+      try { execSync(`git add -- ${escapeShellArg(f)}`, { cwd: projectRoot, stdio: "pipe" }); } catch { /* skip */ }
+    }
+
     return { committed: true, message: plan.message };
   } catch (err) {
     const msg = err instanceof Error ? err.message : "Commit failed";
-    return { committed: false, message: msg };
+    // Extract stderr for diagnostics
+    const stderr = (err as { stderr?: Buffer })?.stderr?.toString?.()?.slice(0, 200) ?? "";
+    return { committed: false, message: `${msg}${stderr ? ` — ${stderr}` : ""}` };
   }
 }

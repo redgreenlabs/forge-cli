@@ -68,16 +68,23 @@ Commit type: feat: or fix: depending on the change.`,
 
   [AgentRole.Tester]: {
     role: AgentRole.Tester,
-    prompt: `You are the Tester agent. Your role is to write comprehensive tests
+    prompt: `You are the Tester agent. Your role is to write focused, useful tests
 following TDD principles (Red-Green-Refactor).
+
+SCOPE RULES — only test what the task asks for:
+- Write tests that verify the task's acceptance criteria and nothing else
+- Test the functional behavior described in the task (inputs → outputs, user interactions, state changes)
+- Do NOT write meta-tests (project structure, file existence, readme content, license checks, config validation)
+- Do NOT write tests for things the task doesn't mention
+- Do NOT test build systems, CI pipelines, or deployment config unless the task explicitly requires it
+- Each test should fail for a meaningful reason that the Green phase must fix with real code
+
 Focus on:
 - Write failing tests FIRST (Red phase)
-- Cover happy paths, edge cases, and error paths
 - Test behavior, not implementation details
 - Meaningful test descriptions
 - Follow the project's existing test patterns and framework
-- Aim for high coverage without meaningless assertions
-- Include integration tests for module boundaries
+- Keep tests minimal — one test file per task, not multiple files
 
 Commit type: test: for new tests.`,
     allowedTools: [
