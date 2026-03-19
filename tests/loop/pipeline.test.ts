@@ -517,4 +517,35 @@ describe("Iteration Pipeline", () => {
       expect(result.timedOut).toBeFalsy();
     });
   });
+
+  describe("expedite mode", () => {
+    it("should skip Red, Refactor, security, and gates", async () => {
+      const pipeline = createPipeline({
+        tddEnabled: false,
+        securityEnabled: false,
+        qualityGatesEnabled: false,
+      });
+      const result = await pipeline.execute(executor, onPhaseChange);
+
+      expect(result.completed).toBe(true);
+      expect(executor.executeRedPhase).not.toHaveBeenCalled();
+      expect(executor.executeRefactorPhase).not.toHaveBeenCalled();
+      expect(executor.runSecurityScan).not.toHaveBeenCalled();
+      expect(executor.runQualityGates).not.toHaveBeenCalled();
+      expect(executor.executeGreenPhase).toHaveBeenCalledTimes(1);
+    });
+
+    it("should still commit in expedite mode", async () => {
+      const pipeline = createPipeline({
+        tddEnabled: false,
+        securityEnabled: false,
+        qualityGatesEnabled: false,
+        autoCommit: true,
+      });
+      const result = await pipeline.execute(executor, onPhaseChange);
+
+      expect(result.completed).toBe(true);
+      expect(result.commitsCreated).toBe(1);
+    });
+  });
 });
