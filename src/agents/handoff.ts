@@ -54,6 +54,8 @@ export interface HandoffSnapshot {
  */
 export class HandoffContext {
   private _entries: HandoffEntry[] = [];
+  /** Maximum entries to keep — older entries are pruned to control token usage */
+  static readonly MAX_ENTRIES = 20;
 
   get entries(): HandoffEntry[] {
     return [...this._entries];
@@ -65,6 +67,10 @@ export class HandoffContext {
       ...input,
       timestamp: Date.now(),
     });
+    // Prune oldest entries to bound token usage
+    if (this._entries.length > HandoffContext.MAX_ENTRIES) {
+      this._entries = this._entries.slice(-HandoffContext.MAX_ENTRIES);
+    }
   }
 
   /** Get entries targeted at a specific agent, sorted by priority */

@@ -260,34 +260,31 @@ describe("LoopOrchestrator", () => {
   });
 
   describe("timeout handling", () => {
-    it("should rotate session on timeout error", async () => {
+    it("should NOT rotate session on timeout (only on context exhaustion)", async () => {
       let callCount = 0;
-      const timeoutThenSuccess: ClaudeExecutor = {
-        execute: vi.fn().mockImplementation(async (opts: { sessionId?: string }) => {
+      const timeoutExecutor: ClaudeExecutor = {
+        execute: vi.fn().mockImplementation(async () => {
           callCount++;
-          if (callCount === 1) {
-            // First call with session — times out
-            return makeClaudeResponse({
-              status: "error",
-              error: "Process timed out (exit code 143) — consider increasing timeoutMinutes",
-              exitSignal: false,
-              testsPass: false,
-            });
-          }
-          // Retry without session should succeed
-          expect(opts.sessionId).toBeUndefined();
-          return makeClaudeResponse();
+          // Timeout error — should NOT trigger session rotation
+          return makeClaudeResponse({
+            status: "error",
+            error: "Process timed out (exit code 143) — consider increasing timeoutMinutes",
+            exitSignal: false,
+            testsPass: false,
+          });
         }),
       };
 
       const orch = createOrchestrator({
-        executor: timeoutThenSuccess,
+        executor: timeoutExecutor,
         sessionId: "sess-timeout-test",
       });
       await orch.runIteration();
 
-      // Executor should have been called twice (timeout + retry)
-      expect(callCount).toBeGreaterThanOrEqual(2);
+      // Timeout should NOT cause a session rotation retry —
+      // the error is returned as-is to the pipeline (no extra call)
+      // Pipeline calls executor for Red phase only (fails, returns error)
+      expect(callCount).toBe(1);
     });
   });
 

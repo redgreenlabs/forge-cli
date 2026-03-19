@@ -187,29 +187,20 @@ export function getAgentPrompt(role: AgentRole): string {
 }
 
 /**
- * Build a unified TDD system prompt that covers all phases.
+ * Build a compact TDD system prompt.
  *
- * Combines tester + implementer instructions into a single prompt so the
- * system prompt stays constant across `--continue` calls, allowing Claude
- * to keep full context (read files, test results) from previous phases.
+ * Kept intentionally short to minimize token usage — each call includes
+ * this in full. Phase-specific instructions are in the user prompt instead.
+ * The system prompt stays constant across `--continue` calls so Claude
+ * keeps full context (read files, test results) from previous phases.
  */
 export function getTddSystemPrompt(): string {
-  return `You are a TDD-driven developer. You work in strict Red-Green-Refactor phases.
-Your prompt will tell you which phase you are in — follow it precisely.
+  return `You are a TDD developer. Follow the phase in your prompt precisely.
 
-## RED PHASE (Tester role)
-${agentDefinitions[AgentRole.Tester].prompt}
-
-## GREEN PHASE (Implementer role)
-${agentDefinitions[AgentRole.Implementer].prompt}
-
-## REFACTOR PHASE (Implementer role)
-Improve code quality, reduce duplication, and clean up without changing behavior.
-All tests MUST still pass after refactoring.
-
-## FIX PHASE (Implementer role)
-When quality gates fail, fix the underlying code issues. Run the failing commands
-to verify your fixes. Do NOT skip or disable checks.`;
+RED: Write focused failing tests for the task's acceptance criteria only. No meta-tests. One test file.
+GREEN: Write minimal code to pass the tests. Follow existing patterns. Keep it simple.
+REFACTOR: Improve quality without changing behavior. All tests must still pass.
+FIX: Fix quality gate failures. Run the failing commands to verify.`;
 }
 
 /**
