@@ -45,6 +45,7 @@ export interface ClaudeExecutor {
     allowedTools: string[];
     timeout: number;
     sessionId?: string;
+    maxTurns?: number;
     onStderr?: (line: string) => void;
     onStreamEvent?: (event: StreamEvent) => void;
     signal?: AbortSignal;
@@ -522,6 +523,7 @@ export class LoopOrchestrator {
           systemPrompt: tddSystemPrompt,
           allowedTools: tddTools,
           timeout,
+          maxTurns: 25,
           onStderr: stderrHandler,
           onStreamEvent: streamHandler,
         }, getSessionId);
@@ -565,6 +567,7 @@ export class LoopOrchestrator {
           systemPrompt: tddSystemPrompt,
           allowedTools: tddTools,
           timeout,
+          maxTurns: 25,
           onStderr: implStderr,
           onStreamEvent: implStream,
         }, () => greenSessionId);
@@ -610,6 +613,7 @@ export class LoopOrchestrator {
           systemPrompt: tddSystemPrompt,
           allowedTools: tddTools,
           timeout,
+          maxTurns: 15,
           onStderr: refStderr,
           onStreamEvent: refStream,
         }, () => refactorSessionId);
@@ -702,6 +706,7 @@ export class LoopOrchestrator {
           systemPrompt: tddSystemPrompt,
           allowedTools: tddTools,
           timeout,
+          maxTurns: 15,
           onStderr: stderrHandler,
           onStreamEvent: streamHandler,
         }, () => fixSessionId);
@@ -877,11 +882,10 @@ export class LoopOrchestrator {
       signal: this._signal,
     });
 
-    // Rotate session on context exhaustion or timeout (large context likely caused the timeout)
-    const isTimeout = response.error?.includes("Process timed out");
-    if ((response.contextExhausted || isTimeout) && this._sessionId) {
-      const reason = response.contextExhausted ? "Context window exhausted" : "Process timed out";
-      this.logAgent("system", "session", `${reason} — rotating to fresh session`);
+    // Rotate session only on context exhaustion — timeouts are often caused by
+    // hanging tests, not context size, and rotation wastes tokens re-reading files
+    if (response.contextExhausted && this._sessionId) {
+      this.logAgent("system", "session", "Context window exhausted — rotating to fresh session");
       this._sessionId = undefined;
       return this._executor.execute({
         ...options,

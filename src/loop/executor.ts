@@ -16,6 +16,8 @@ export interface ClaudeExecOptions {
   onStderr?: (line: string) => void;
   /** Callback for real-time stream-json events from Claude CLI stdout */
   onStreamEvent?: (event: StreamEvent) => void;
+  /** Maximum number of agentic turns per invocation (limits tool call loops) */
+  maxTurns?: number;
   /** Abort signal to cancel the running Claude process */
   signal?: AbortSignal;
 }
@@ -89,6 +91,11 @@ export function buildClaudeArgs(options: ClaudeExecOptions): string[] {
   // Budget cap
   if (options.maxBudgetUsd !== undefined) {
     args.push("--max-budget-usd", String(options.maxBudgetUsd));
+  }
+
+  // Limit agentic turns to prevent runaway tool loops
+  if (options.maxTurns !== undefined) {
+    args.push("--max-turns", String(options.maxTurns));
   }
 
   return args;
