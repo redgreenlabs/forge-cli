@@ -424,7 +424,15 @@ program
         expedite: options.expedite ? true : undefined,
       };
       const dash = startLiveDashboard(initialDashState, {
-        onQuit: () => controller.abort(),
+        onQuit: () => {
+          controller.abort();
+          // Clean up TUI immediately so the terminal is restored
+          if (inkCleanup) {
+            inkCleanup();
+            inkCleanup = null;
+          }
+          console.log(chalk.yellow("Shutting down..."));
+        },
       });
       inkUpdater = dash.updater;
       inkCleanup = dash.cleanup;
@@ -456,9 +464,21 @@ program
       expedite: options.expedite as boolean | undefined,
     });
 
+    let signalCount = 0;
     const onSignal = () => {
-      console.log(chalk.yellow("\n\nGraceful shutdown..."));
-      controller.abort();
+      signalCount++;
+      if (signalCount === 1) {
+        controller.abort();
+        // Clean up TUI immediately so the user sees terminal output
+        if (inkCleanup) {
+          inkCleanup();
+          inkCleanup = null;
+        }
+        console.log(chalk.yellow("Shutting down... (press Ctrl+C again to force quit)"));
+      } else {
+        // Force exit on second signal
+        process.exit(1);
+      }
     };
     process.on("SIGINT", onSignal);
     process.on("SIGTERM", onSignal);
