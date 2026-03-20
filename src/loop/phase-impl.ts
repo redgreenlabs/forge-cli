@@ -102,16 +102,35 @@ export async function commitPhase(
     //   " D file" (unstaged deletion)
     // We skip already-staged files (e.g. "M  file", "D  file", "A  file")
     // to avoid committing unrelated pre-existing staged changes.
-    const statusOutput = execSync("git status --porcelain -u", {
+    // Use -uno (no untracked) to avoid ENOBUFS on large repos with
+    // untracked node_modules. Then separately get untracked files that
+    // match our files list.
+    const statusOutput = execSync("git status --porcelain -uno", {
       cwd: projectRoot,
       encoding: "utf-8",
       stdio: ["pipe", "pipe", "pipe"],
+      maxBuffer: 10 * 1024 * 1024, // 10MB
     });
 
+    // Get untracked files respecting .gitignore (safe for large repos)
+    let untrackedOutput = "";
+    try {
+      untrackedOutput = execSync("git ls-files --others --exclude-standard", {
+        cwd: projectRoot,
+        encoding: "utf-8",
+        stdio: ["pipe", "pipe", "pipe"],
+        maxBuffer: 10 * 1024 * 1024,
+      });
+    } catch {
+      // Fallback: ignore untracked files if this fails
+    }
+
     const EXCLUDE_PREFIXES = [".forge/", "node_modules/", "build/", ".dart_tool/"];
-    const isExcluded = (f: string) => EXCLUDE_PREFIXES.some((p) => f.startsWith(p));
+    const isExcluded = (f: string) => EXCLUDE_PREFIXES.some((p) => f.startsWith(p) || f.includes("/node_modules/"));
 
     const changedFiles: string[] = [];
+
+    // Process tracked file changes (modified, deleted, staged)
     for (const line of statusOutput.split("\n")) {
       if (line.length < 4) continue;
       const indexStatus = line[0];  // staged status
@@ -119,18 +138,24 @@ export async function commitPhase(
       const filePath = line.slice(3).trim();
       if (!filePath || isExcluded(filePath)) continue;
 
-      // Include unstaged changes and untracked files
-      if (workStatus === "M" || workStatus === "D" || indexStatus === "?") {
+      // Include unstaged changes
+      if (workStatus === "M" || workStatus === "D") {
         changedFiles.push(filePath);
       }
       // Also include files from the executor's list that are already staged
-      // (these are files Claude modified in this iteration)
       else if (
         (indexStatus === "M" || indexStatus === "A" || indexStatus === "D") &&
         files.some((f) => filePath === f || filePath.endsWith(f) || f.endsWith(filePath))
       ) {
         changedFiles.push(filePath);
       }
+    }
+
+    // Process untracked files (already filtered by .gitignore via ls-files)
+    for (const line of untrackedOutput.split("\n")) {
+      const filePath = line.trim();
+      if (!filePath || isExcluded(filePath)) continue;
+      changedFiles.push(filePath);
     }
 
     if (changedFiles.length === 0) {
@@ -143,6 +168,7 @@ export async function commitPhase(
       cwd: projectRoot,
       encoding: "utf-8",
       stdio: ["pipe", "pipe", "pipe"],
+      maxBuffer: 10 * 1024 * 1024,
     });
     const preStagedFiles = preStagedOutput.split("\n").filter((f) => f.trim().length > 0);
 
