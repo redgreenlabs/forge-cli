@@ -748,19 +748,44 @@ export class LoopOrchestrator {
   async runLoop(signal?: AbortSignal): Promise<void> {
     this._signal = signal;
 
-    // On resume: commit any uncommitted work from a previous interrupted session
-    const pendingCommits = this._taskManifest.uncommitted();
-    if (pendingCommits.length > 0) {
-      this.logAgent("system", "recovery",
-        `Found ${pendingCommits.length} uncommitted entries from previous session — committing`);
-      const { committed, failed } = await this._taskManifest.commitUncommitted(this._projectRoot);
-      if (committed > 0) {
-        this.logAgent("system", "recovery", `Recovered ${committed} commits`);
-        this._committedCount += committed;
+    // On resume: recover uncommitted work from a previous interrupted session.
+    // Only commit tasks where all 3 TDD phases completed (red+green+refactor).
+    // Partially completed tasks are left for the pipeline to resume naturally:
+    //   - Red only → pipeline will run Green next (test file already exists)
+    //   - Red+Green → pipeline will run Refactor next
+    const pendingEntries = this._taskManifest.uncommitted();
+    if (pendingEntries.length > 0) {
+      // Group by taskId to check completeness
+      const byTask = new Map<string, Set<string>>();
+      for (const entry of pendingEntries) {
+        const phases = byTask.get(entry.taskId) ?? new Set();
+        phases.add(entry.phase);
+        byTask.set(entry.taskId, phases);
       }
-      if (failed > 0) {
-        this.logAgent("system", "recovery", `${failed} recovery commits failed`);
+
+      const completeTasks = [...byTask.entries()]
+        .filter(([, phases]) => phases.has("green")) // At minimum, implementation was done
+        .map(([id]) => id);
+
+      const partialTasks = [...byTask.entries()]
+        .filter(([, phases]) => !phases.has("green"))
+        .map(([id]) => id);
+
+      if (completeTasks.length > 0) {
+        this.logAgent("system", "recovery",
+          `Committing ${completeTasks.length} completed tasks from previous session`);
+        const { committed } = await this._taskManifest.commitUncommitted(this._projectRoot);
+        if (committed > 0) {
+          this.logAgent("system", "recovery", `Recovered ${committed} commits`);
+          this._committedCount += committed;
+        }
       }
+
+      if (partialTasks.length > 0) {
+        this.logAgent("system", "recovery",
+          `${partialTasks.length} partial tasks will resume from where they left off`);
+      }
+
       this.emitDashboardUpdate();
     }
 

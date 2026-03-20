@@ -76,9 +76,10 @@ export class TaskManifest {
   }
 
   /**
-   * Attempt to commit all uncommitted entries, grouped by taskId.
+   * Attempt to commit uncommitted entries, grouped by taskId.
+   * Only commits tasks that have at least a "green" phase (implementation done).
+   * Tasks with only "red" phase are left for the pipeline to resume.
    * Returns the number of commits created.
-   * Used on resume to recover work from a previous interrupted session.
    */
   async commitUncommitted(projectRoot: string): Promise<{ committed: number; failed: number }> {
     const uncommitted = this.uncommitted();
@@ -107,6 +108,12 @@ export class TaskManifest {
     const EXCLUDE = ["node_modules/", ".forge/", "build/", ".dart_tool/"];
 
     for (const [taskId, task] of byTask) {
+      // Skip tasks where implementation didn't complete (only Red phase ran)
+      // — these will be resumed by the pipeline naturally
+      if (!task.phases.includes("green")) {
+        continue;
+      }
+
       // Convert absolute paths to relative and filter
       const relFiles = [...task.files]
         .map((f) => f.startsWith(projectRoot) ? f.slice(projectRoot.length + 1) : f)
