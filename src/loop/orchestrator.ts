@@ -923,6 +923,11 @@ export class LoopOrchestrator {
       this._sessionId = undefined;
       this.emitDashboardUpdate();
 
+      // If aborted during countdown, return immediately — don't retry
+      if (this._signal?.aborted || this._userAborted) {
+        return response;
+      }
+
       // Single retry after waiting — if still rate-limited, return the error
       // to avoid infinite retry storms
       const retryResponse = await this._executor.execute({
