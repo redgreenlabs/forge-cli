@@ -370,4 +370,31 @@ describe("commitPhase", () => {
     expect(status).toContain("build/");
     expect(status).toContain(".forge/");
   });
+
+  it("should not crash on repos with large untracked node_modules", async () => {
+    // Simulate a repo with node_modules that would overflow default buffer
+    mkdirSync(join(tmpDir, "src"), { recursive: true });
+    mkdirSync(join(tmpDir, "node_modules", "some-pkg"), { recursive: true });
+    mkdirSync(join(tmpDir, "infra", "node_modules", "dep"), { recursive: true });
+    writeFileSync(join(tmpDir, "src/app.ts"), "export const x = 1;");
+    writeFileSync(join(tmpDir, "node_modules/some-pkg/index.js"), "module.exports = {};");
+    writeFileSync(join(tmpDir, "infra/node_modules/dep/index.js"), "module.exports = {};");
+
+    const result = await commitPhase(
+      TddPhase.Green,
+      ["src/app.ts"],
+      "Add app",
+      tmpDir
+    );
+
+    expect(result.committed).toBe(true);
+
+    // node_modules should NOT be committed
+    const log = execSync("git log -1 --name-only --format=", {
+      cwd: tmpDir,
+      encoding: "utf-8",
+    });
+    expect(log).not.toContain("node_modules");
+    expect(log).toContain("src/app.ts");
+  });
 });
