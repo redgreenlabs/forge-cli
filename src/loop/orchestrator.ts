@@ -747,6 +747,23 @@ export class LoopOrchestrator {
   /** Run the full loop until a stop condition is met */
   async runLoop(signal?: AbortSignal): Promise<void> {
     this._signal = signal;
+
+    // On resume: commit any uncommitted work from a previous interrupted session
+    const pendingCommits = this._taskManifest.uncommitted();
+    if (pendingCommits.length > 0) {
+      this.logAgent("system", "recovery",
+        `Found ${pendingCommits.length} uncommitted entries from previous session — committing`);
+      const { committed, failed } = await this._taskManifest.commitUncommitted(this._projectRoot);
+      if (committed > 0) {
+        this.logAgent("system", "recovery", `Recovered ${committed} commits`);
+        this._committedCount += committed;
+      }
+      if (failed > 0) {
+        this.logAgent("system", "recovery", `${failed} recovery commits failed`);
+      }
+      this.emitDashboardUpdate();
+    }
+
     while (!this.shouldStop()) {
       if (signal?.aborted || this._userAborted) {
         break;
